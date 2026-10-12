@@ -4,8 +4,8 @@ use crate::review::{Draft, DraftId, Place, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 impl App {
-    /// Opens the compose box on `input`, in the pane at its line; `text` prefills it, else the text
-    /// left unsent for that target earlier comes back.
+    /// Opens the compose box on `input`, in the pane at its line, or in the diff under the row it will land after
+    /// where threads read there; `text` prefills it, else the text left unsent for that target earlier comes back.
     pub(super) fn open_input(&mut self, input: Input, text: &str) {
         let kept = self.unsent.remove(&target_key(&input));
         let text = if text.is_empty() { kept.unwrap_or_default() } else { text.to_owned() };
@@ -15,8 +15,12 @@ impl App {
         self.input = Some(input);
     }
 
-    /// The pane shows where the text goes: the line of a new thread, the thread of a reply.
+    /// The pane shows where the text goes: the line of a new thread, the thread of a reply. Written from the diff
+    /// where threads read in it, the diff shows it instead.
     fn show_target(&mut self, input: &Input) {
+        if self.compose_in_diff(input) {
+            return;
+        }
         let Some(open) = &self.open else { return };
         let review = &open.review;
         let place = match input {
@@ -34,6 +38,7 @@ impl App {
             }
         };
         match place {
+            Some(place) if !open.pane_takes(&place) => {}
             Some(place) if open.pane.as_ref().is_none_or(|p| p.place != place) => self.open_pane(place),
             _ => self.focus = super::Focus::Side,
         }
@@ -80,7 +85,7 @@ impl App {
         {
             self.unsent.insert(target_key(&input), text);
         }
-        self.focus = self.compose_from;
+        self.back_from_compose();
     }
 
     /// `ctrl-o`: the text goes on in `$EDITOR`; if the editor gives nothing back, the box keeps it.
@@ -90,7 +95,7 @@ impl App {
         if !text.trim().is_empty() {
             self.unsent.insert(target_key(&input), text.clone());
         }
-        self.focus = self.compose_from;
+        self.back_from_compose();
         vec![Action::Compose { input, draft: text }]
     }
 
@@ -125,7 +130,7 @@ impl App {
     fn submit_input(&mut self) -> Vec<Action> {
         let text = self.buffer.take().trim().to_owned();
         let Some(input) = self.input.take() else { return vec![] };
-        self.focus = self.compose_from;
+        self.back_from_compose();
         if text.is_empty() {
             return vec![];
         }
@@ -154,6 +159,7 @@ impl App {
             select_from: None,
             ..open.with_drafts_changed(|drafts| drafts.into_iter().chain([draft]).collect())
         });
+        self.rest_on_draft(self.draft_count().saturating_sub(1));
         vec![save]
     }
 
@@ -164,6 +170,7 @@ impl App {
         let changed = draft.clone().with_body(text);
         let update = draft.id.map(|id| Action::UpdateDraft { key: open.key.clone(), id, draft: Box::new(changed.clone()) });
         self.update_open(|open| open.with_draft_replaced(index, changed));
+        self.rest_on_draft(index);
         update.into_iter().collect()
     }
 

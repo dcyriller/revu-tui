@@ -234,6 +234,11 @@ impl App {
         if self.prose_open() {
             return self.handle_prose_key(key);
         }
+        if self.on_thread_row()
+            && let Some(actions) = self.handle_thread_key(key)
+        {
+            return actions;
+        }
         if !key.modifiers.contains(KeyModifiers::CONTROL)
             && let Some(actions) = self.handle_write_key(key)
         {

@@ -93,6 +93,8 @@ pub struct App {
     pub wrap: bool,
     /// Zen, `zz`: the diff alone in a centred column, no frames, no status line, nothing pulsing.
     pub zen: bool,
+    /// The last frame was too narrow for the right pane beside the diff.
+    pub narrow: bool,
     /// How wide the diff reads in zen, `[tui] zen_width`; `None` grows it with the screen.
     pub zen_width: Option<u16>,
     /// The terminal widths the layout turns on, `[tui] narrow_width` and `wide_width`.
@@ -166,6 +168,8 @@ pub struct App {
     pub unsent: HashMap<String, String>,
     /// Where the compose box was opened from: the keys go back there once it closes.
     pub compose_from: Focus,
+    /// The diff row the cursor left for the compose box under another row; it goes back there once the box closes.
+    pub compose_left: Option<crate::review::Row>,
     pub publish: Option<Publish>,
     /// The MR description modal.
     pub brief: Option<Brief>,
@@ -187,6 +191,8 @@ pub struct App {
     pub kept: super::Kept,
     /// The right pane as the last frame laid it out.
     pub pane_layout: Option<crate::tui::thread_view::PaneLayout>,
+    /// The conversations the diff draws under their lines, as the last frame laid them out.
+    pub thread_rows: crate::tui::thread_view::InlineLayout,
     /// A file ready for the reader's program; the loop takes it and hands over the terminal.
     pub viewing: Option<crate::open::View>,
     /// What the editor's text turned into; the loop drains it after `apply`.
@@ -251,6 +257,7 @@ impl App {
             header_folded: false,
             wrap: false,
             zen: false,
+            narrow: false,
             zen_width: settings.zen_width,
             widths: settings.widths,
             zen_switch: None,
@@ -292,6 +299,7 @@ impl App {
             buffer: Field::default(),
             unsent: HashMap::new(),
             compose_from: Focus::default(),
+            compose_left: None,
             publish: None,
             brief: None,
             links: vec![],
@@ -302,6 +310,7 @@ impl App {
             drag: None,
             kept: super::Kept::default(),
             pane_layout: None,
+            thread_rows: crate::tui::thread_view::InlineLayout::default(),
             thumbs: settings.pictures.map_or_else(crate::tui::images::Thumbs::off, crate::tui::images::Thumbs::with),
             viewing: None,
             composed: vec![],
