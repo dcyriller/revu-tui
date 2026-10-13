@@ -30,9 +30,9 @@ const ZEN_SPLIT_FROM: u16 = 24;
 const ZEN_PANE_PCT: u16 = 25;
 const ZEN_COMPOSE_PCT: u16 = 50;
 const ZEN_PANE_MIN: u16 = 8;
-const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-/// Slow on purpose: each step is a repaint a phone link pays for, and four a second still read as alive.
-pub const SPINNER_FRAME: Duration = Duration::from_millis(250);
+/// Under this many rows the compact layout is short: the status row and the MR header give their rows to the page.
+const SHORT_BELOW: u16 = 20;
+
 /// A `!42` on screen: the loop prints it again as a terminal hyperlink to `url`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -46,18 +46,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     app.links.clear();
     app.text_rows.clear();
     app.list_rows.clear();
+    app.taps.clear();
+    let screen = f.area();
+    app.compact = screen.width < app.widths.compact;
+    app.narrow = app.compact || screen.width < app.widths.narrow;
+    app.short = app.compact && screen.height < SHORT_BELOW;
     let input_rows = u16::from(app.filtering);
-    let status_rows = u16::from(
-        !app.zen
-            || app.confirm.is_some()
-            || app.pending == Some('\'')
-            || app.quit_prompt().is_some()
-            || app.react.is_some()
-            || app.search.is_some(),
-    );
-    let [main, input, status] =
-        Layout::vertical([Constraint::Min(3), Constraint::Length(input_rows), Constraint::Length(status_rows)]).areas(f.area());
-    app.narrow = main.width < app.widths.narrow;
+    let status_rows = status_rows(app);
+    let tap_rows = u16::from(app.shows_taps());
+    let rows = [Constraint::Min(3), Constraint::Length(input_rows), Constraint::Length(status_rows), Constraint::Length(tap_rows)];
+    let [main, input, status, taps] = Layout::vertical(rows).areas(screen);
     app.fit_threads();
     let side_open = app.open.as_ref().is_some_and(super::app::Open::side_open);
     let shown = columns(main.width, app.widths, app.open.is_some(), side_open, app.focus, app.zen);
@@ -77,8 +75,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         super::queue_view::draw(f, app, queue);
     }
     if shown.diff {
-        let gutter = if app.narrow { diff_view::Gutter::One } else { diff_view::Gutter::Both };
-        diff_view::draw(f, app, review, gutter);
+        diff_view::draw(f, app, review, gutter(app));
     }
     let mut pictures = vec![];
     if app.open.as_ref().is_some_and(|o| o.answer.is_some()) && side_open {
@@ -97,6 +94,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if status_rows > 0 {
         draw_status(f, app, status);
+    }
+    if tap_rows > 0 {
+        super::taps_view::draw(f, app, taps);
     }
     let modal = app.modal();
     if modal {
@@ -118,7 +118,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         drag.paint(&app.text_rows, f.buffer_mut());
     }
     if app.zen {
-        draw_zen_overlays(f, app, main);
+        draw_zen_banner(f, app, main);
+    }
+    if app.zen || app.short {
+        draw_toast_over(f, app, main);
     }
     if let Some(publish) = app.publish.clone() {
         publish_view::draw(f, app, &publish, main);
@@ -140,22 +143,40 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// In zen: the MR just switched to, on top for a moment, and a fresh toast on the bottom row.
-fn draw_zen_overlays(f: &mut Frame, app: &App, area: Rect) {
+/// The status row shows unless zen or a short compact screen drops it; whatever asks the reader something brings it back.
+fn status_rows(app: &App) -> u16 {
+    let dropped = app.zen || (app.short && app.offer.is_none());
+    u16::from(app.asks() || !dropped)
+}
+
+/// The line numbers the diff shows: none in the compact layout, where the pane's title carries the cursor's.
+fn gutter(app: &App) -> diff_view::Gutter {
+    match (app.compact && !app.zen, app.narrow) {
+        (true, _) => diff_view::Gutter::Sign,
+        (false, true) => diff_view::Gutter::One,
+        (false, false) => diff_view::Gutter::Both,
+    }
+}
+
+/// In zen: the MR just switched to, on top for a moment.
+fn draw_zen_banner(f: &mut Frame, app: &App, area: Rect) {
+    let Some(text) = app.zen_banner(app.now) else { return };
     let theme = app.theme;
-    if let Some(text) = app.zen_banner(app.now) {
-        let text = truncate(text, usize::from(area.width.saturating_sub(4)));
-        let line = Line::from(Span::styled(format!(" {text} "), Style::default().fg(theme.accent).bg(theme.surface)));
-        let width = u16::try_from(line.width()).unwrap_or(area.width).min(area.width);
-        let top = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: 1 };
-        f.render_widget(Paragraph::new(line), top);
-    }
-    if let Some(toast) = app.live_toast().filter(|t| t.fresh(app.now)) {
-        let colour = if toast.danger { theme.danger } else { theme.muted };
-        let line = Line::from(Span::styled(truncate(&toast.text, usize::from(area.width)), Style::default().fg(colour)));
-        let bottom = Rect { y: area.bottom().saturating_sub(1), height: 1, ..area };
-        f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bottom);
-    }
+    let text = truncate(text, usize::from(area.width.saturating_sub(4)));
+    let line = Line::from(Span::styled(format!(" {text} "), Style::default().fg(theme.accent).bg(theme.surface)));
+    let width = u16::try_from(line.width()).unwrap_or(area.width).min(area.width);
+    let top = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: 1 };
+    f.render_widget(Paragraph::new(line), top);
+}
+
+/// Where no status row shows: a fresh toast on the bottom row.
+fn draw_toast_over(f: &mut Frame, app: &App, area: Rect) {
+    let Some(toast) = app.live_toast().filter(|t| t.fresh(app.now)) else { return };
+    let theme = app.theme;
+    let colour = if toast.danger { theme.danger } else { theme.muted };
+    let line = Line::from(Span::styled(truncate(&toast.text, usize::from(area.width)), Style::default().fg(colour)));
+    let bottom = Rect { y: area.bottom().saturating_sub(1), height: 1, ..area };
+    f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bottom);
 }
 
 /// Pictures go on last, after the fades: the terminal paints them as pixels or placeholder cells,
@@ -182,10 +203,15 @@ struct Columns {
 /// The right pane's width rules: all three columns from `widths.wide`, the queue steps aside from `widths.narrow`,
 /// and below that, or in a zen column too short to split, the pane is a page of its own while it has the keys.
 /// Below `widths.narrow` an open MR leaves the queue the same way: it shows only while it has the keys.
+/// Below `widths.compact` one page shows at a time: the queue while it has the keys, whole, else the diff or the pane.
 fn columns(width: u16, widths: Widths, mr_open: bool, side_open: bool, focus: Focus, zen: bool) -> Columns {
     let side = SIDE_W.max(width * SIDE_PCT / 100);
-    let narrow = width < widths.narrow;
-    let queue_kept = !mr_open || focus == Focus::Queue;
+    let paged = width < widths.compact && !zen;
+    if paged && focus == Focus::Queue {
+        return Columns { queue: width, side: 0, diff: false };
+    }
+    let narrow = paged || width < widths.narrow;
+    let queue_kept = !paged && (!mr_open || focus == Focus::Queue);
     let queue = match (zen, width) {
         (true, _) => 0,
         (false, _) if narrow && !queue_kept => 0,
@@ -194,7 +220,7 @@ fn columns(width: u16, widths: Widths, mr_open: bool, side_open: bool, focus: Fo
     };
     match side_open {
         false => Columns { queue, side: 0, diff: true },
-        true if !zen && width >= widths.wide => Columns { queue, side, diff: true },
+        true if !zen && !narrow && width >= widths.wide => Columns { queue, side, diff: true },
         true if !zen && !narrow => Columns { queue: 0, side, diff: true },
         true if focus == Focus::Side => Columns { queue: 0, side: width, diff: false },
         true => Columns { queue, side: 0, diff: true },
@@ -399,7 +425,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![rate, dot.clone(), Span::styled("? help ", muted)])
     } else if app.loading() {
         Line::from(vec![
-            Span::styled(spinner(app.now.duration_since(app.started)), Style::default().fg(theme.accent)),
+            Span::styled(app.spinner(), Style::default().fg(theme.accent)),
             Span::styled(" loading", muted),
             dot,
             Span::styled("? help ", muted),
@@ -441,10 +467,6 @@ pub fn settle_scroll(scroll: usize, selected: usize, height: usize) -> usize {
     }
 }
 
-pub fn spinner(elapsed: Duration) -> &'static str {
-    SPINNER[(elapsed.as_millis() / SPINNER_FRAME.as_millis()) as usize % SPINNER.len()]
-}
-
 /// `text` cut to `width` columns, an ellipsis in the last one when it does not fit.
 /// `2 passed · 1 failed`: each count in its colour, zeros left out.
 pub fn counts<'a>(parts: &[(usize, &str, Color)], theme: Theme) -> Line<'a> {
@@ -465,6 +487,17 @@ pub fn truncate(text: &str, width: usize) -> String {
     with_ellipsis(text.chars(), width)
 }
 
+/// `text` cut to `width` columns from its middle, so both of its ends still read: `src/pay/…/charge.rs`.
+pub fn truncate_middle(text: &str, width: usize) -> String {
+    if text.width() <= width {
+        return text.to_owned();
+    }
+    let room = width.saturating_sub(1);
+    let head = fitting(text.chars(), room / 2);
+    let tail: String = fitting(text.chars().rev(), room - room / 2).chars().rev().collect();
+    format!("{head}…{tail}")
+}
+
 /// `text` with each tab drawn as `tab`, cut as `truncate` cuts, without drawing the tabs of a long line past the cut.
 pub fn truncate_tabs(text: &str, tab: &str, width: usize) -> String {
     let drawn = text.split('\t').map(UnicodeWidthStr::width).sum::<usize>() + text.matches('\t').count() * tab.width();
@@ -477,16 +510,18 @@ pub fn truncate_tabs(text: &str, tab: &str, width: usize) -> String {
 
 /// The first `chars` that fit in `width - 1` columns, then `…`.
 fn with_ellipsis(chars: impl Iterator<Item = char>, width: usize) -> String {
-    let room = width.saturating_sub(1);
+    format!("{}…", fitting(chars, width.saturating_sub(1)))
+}
+
+/// The first `chars` that fit in `room` columns.
+fn fitting(chars: impl Iterator<Item = char>, room: usize) -> String {
     let mut used = 0;
-    let mut out: String = chars
+    chars
         .take_while(|&c| {
             used += UnicodeWidthChar::width(c).unwrap_or(0);
             used <= room
         })
-        .collect();
-    out.push('…');
-    out
+        .collect()
 }
 
 pub fn short_age(age: Duration) -> String {
@@ -509,7 +544,7 @@ mod columns_tests {
 
     #[test]
     fn a_set_narrow_width_moves_where_the_queue_hides_and_the_pane_turns_into_a_page() {
-        let widths = Widths { narrow: 100, wide: 150 };
+        let widths = Widths { narrow: 100, ..Widths::default() };
         let reading = |width| super::columns(width, widths, true, false, Focus::Review, false).queue;
         assert_eq!((reading(99), reading(100), reading(110)), (0, QUEUE_W, QUEUE_W));
         let pane = |width| super::columns(width, widths, true, true, Focus::Side, false);
@@ -519,11 +554,11 @@ mod columns_tests {
 
     #[test]
     fn a_set_wide_width_moves_where_the_three_columns_start() {
-        let widths = Widths { narrow: 120, wide: 130 };
+        let widths = Widths { wide: 130, ..Widths::default() };
         let pane = |width| super::columns(width, widths, true, true, Focus::Review, false);
         assert_eq!(pane(129), Columns { queue: 0, side: 51, diff: true });
         assert_eq!(pane(130), Columns { queue: QUEUE_W, side: 52, diff: true });
-        let late = super::columns(155, Widths { narrow: 120, wide: 180 }, true, true, Focus::Review, false);
+        let late = super::columns(155, Widths { wide: 180, ..Widths::default() }, true, true, Focus::Review, false);
         assert_eq!(late.queue, 0, "150 is no longer wide");
     }
 
@@ -561,6 +596,26 @@ mod columns_tests {
         assert_eq!(columns(119, true, true, Focus::Queue, false).queue, QUEUE_W, "the pane behind it stays away");
         assert_eq!(columns(119, false, false, Focus::Review, false).queue, QUEUE_W, "with no MR open the queue stays");
         assert_eq!(columns(120, true, false, Focus::Review, false).queue, QUEUE_W, "from 120 the queue stays");
+    }
+
+    #[test]
+    fn below_70_one_page_shows_at_a_time_and_the_queue_takes_the_window() {
+        assert_eq!(columns(69, false, false, Focus::Queue, false), Columns { queue: 69, side: 0, diff: false });
+        assert_eq!(columns(69, true, true, Focus::Queue, false), Columns { queue: 69, side: 0, diff: false }, "over an open MR too");
+        assert_eq!(columns(69, true, false, Focus::Review, false), Columns { queue: 0, side: 0, diff: true });
+        assert_eq!(columns(69, false, false, Focus::Review, false).queue, 0, "an MR on its way has the page already");
+        assert_eq!(columns(69, true, true, Focus::Side, false), Columns { queue: 0, side: 69, diff: false });
+        assert_eq!(columns(69, true, true, Focus::Queue, true), Columns { queue: 0, side: 0, diff: true }, "zen keeps its diff");
+        assert_eq!(columns(70, false, false, Focus::Queue, false), Columns { queue: QUEUE_W, side: 0, diff: true }, "from 70, as before");
+    }
+
+    #[test]
+    fn the_layout_setting_pages_a_wide_window_and_spares_a_small_one() {
+        let forced = Widths { compact: u16::MAX, ..Widths::default() };
+        assert_eq!(super::columns(200, forced, true, true, Focus::Queue, false), Columns { queue: 200, side: 0, diff: false });
+        assert_eq!(super::columns(200, forced, true, true, Focus::Side, false), Columns { queue: 0, side: 200, diff: false });
+        let never = Widths { compact: 0, ..Widths::default() };
+        assert_eq!(super::columns(50, never, false, false, Focus::Queue, false), Columns { queue: QUEUE_W, side: 0, diff: true });
     }
 
     #[test]
@@ -664,6 +719,14 @@ mod tests {
         assert_eq!(truncate("漢漢漢", 4), "漢…", "a wide character that would cross the cut stays out");
     }
 
+    #[test]
+    fn a_cut_from_the_middle_keeps_both_ends() {
+        assert_eq!(truncate_middle("src/a.rs", 20), "src/a.rs");
+        assert_eq!(truncate_middle("src/tui/app/compact/diff_view.rs", 20), "src/tui/a…ff_view.rs");
+        assert_eq!(truncate_middle("漢漢漢漢漢", 6), "漢…漢", "a wide character that would cross the cut stays out");
+        assert_eq!(truncate_middle("abcdef", 1), "…");
+    }
+
     proptest::proptest! {
         #[test]
         fn a_cut_text_never_takes_more_than_its_width(text in "[a-zé漢🦀 ]{0,20}", width in 1..24usize) {
@@ -671,15 +734,14 @@ mod tests {
         }
 
         #[test]
+        fn a_text_cut_from_the_middle_never_takes_more_than_its_width(text in "[a-zé漢🦀/ ]{0,20}", width in 1..24usize) {
+            proptest::prop_assert!(truncate_middle(&text, width).width() <= width);
+        }
+
+        #[test]
         fn tabs_drawn_while_cutting_read_as_tabs_drawn_first(text in "[a-z漢\t ]{0,20}", width in 1..24usize) {
             proptest::prop_assert_eq!(truncate_tabs(&text, "→   ", width), truncate(&text.replace('\t', "→   "), width));
         }
-    }
-
-    #[test]
-    fn the_spinner_steps_four_times_a_second() {
-        let at = |ms: u64| spinner(Duration::from_millis(ms));
-        assert_eq!((1..=1000).filter(|&ms| at(ms) != at(ms - 1)).count(), 4);
     }
 
     #[test]

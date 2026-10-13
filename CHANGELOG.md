@@ -18,11 +18,29 @@ Each entry says what changed, then where, then how to use it.
 - **Copy a link from the command line.**
   In the queue and in the diff.
   `:copy` copies the link `:open` would show in the browser.
+- **Review from a phone, one page at a time.**
+  In a window under 70 columns: the queue, the diff and the right pane each take the whole screen.
+  `enter` opens the diff, `h` goes back a page, and `[tui] layout = "compact"` forces it at any width.
+- **A diff that fits a phone.**
+  In the compact layout: long lines wrap, only the sign shows, and the title tells the cursor's line.
+  `w` cuts long lines again, and a long file path keeps its folder and its name.
+- **More rows for the page when the keyboard is up.**
+  In the compact layout under 20 rows: the status row and the MR header hide.
+  A question, the search and the queue filter keep their row, and a toast shows on the bottom row.
+- **Tap a label instead of typing a key.**
+  In the compact layout, on the bottom row: the main actions of the page, and `more` for every command.
+  Tap a label to press its key, and set `[tui] tap_bar = false` to hide the row.
+- **A short key list for the page you are on.**
+  In the compact layout, on the first `?`: the keys of the tap bar.
+  `?` again lists every key.
+- **Open the search with a comma.**
+  In the queue, the diff and the right pane, wherever `ctrl-k` works.
+  `,` opens it on MRs, then `/` finds files and `>` runs commands.
 
 ### Fixed
 
 - **A screen at rest sends nothing to a slow link.**
-  In the queue, where the marks stay lit, and wherever a spinner turns, now four steps a second.
+  In the compact layout: the queue marks stay lit, and a spinner turns four steps a second.
 
 ## 0.7.0 - 2026-10-12
 

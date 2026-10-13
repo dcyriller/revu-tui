@@ -98,6 +98,7 @@ impl App {
         }
         match key.code {
             KeyCode::Char(':') => self.open_palette(crate::tui::palette::Mode::Commands),
+            KeyCode::Char(',') => self.open_palette(crate::tui::palette::Mode::Mrs),
             KeyCode::Char('q') if self.focus != Focus::Queue && self.open.as_ref().is_some_and(super::Open::side_open) => {
                 return self.handle_side_key(KeyEvent::from(KeyCode::Esc));
             }
@@ -278,8 +279,9 @@ impl App {
             }
             KeyCode::Char('=') => return self.expand_context(),
             KeyCode::Char('w') => {
-                self.wrap = !self.wrap;
-                self.toast(if self.wrap { "long lines wrap" } else { "long lines end in …" });
+                let wrap = !self.wraps();
+                self.wrap = Some(wrap);
+                self.toast(if wrap { "long lines wrap" } else { "long lines end in …" });
             }
             KeyCode::Tab => self.review_jump(true, |r| matches!(r, Row::File { .. })),
             KeyCode::BackTab => self.review_jump(false, |r| matches!(r, Row::File { .. })),
@@ -403,7 +405,7 @@ impl App {
         if self.is_help_key(key) {
             return (!open.every_key).then_some(Help { scroll: 0, every_key: true });
         }
-        let last = help::last_row(open.every_key, self.focus);
+        let last = help::last_row(self, open.every_key);
         scroll_key(open.scroll, last, key).map(|scroll| Help { scroll, ..open })
     }
 
@@ -513,11 +515,11 @@ mod tests {
         press(&mut app, "jjk");
         assert_eq!(app.help, Some(Help { scroll: 1, every_key: false }), "moving keys scroll the list");
         press(&mut app, "G");
-        assert_eq!(app.help, Some(Help { scroll: crate::tui::help::last_row(false, Focus::Queue), every_key: false }));
+        assert_eq!(app.help, Some(Help { scroll: crate::tui::help::last_row(&app, false), every_key: false }));
         press(&mut app, "?");
         assert_eq!(app.help, Some(Help { scroll: 0, every_key: true }), "a second `?` lists every key from the top");
         press(&mut app, "G");
-        assert_eq!(app.help.map(|h| h.scroll), Some(crate::tui::help::last_row(true, Focus::Queue)));
+        assert_eq!(app.help.map(|h| h.scroll), Some(crate::tui::help::last_row(&app, true)));
         press(&mut app, "?");
         assert_eq!(app.help, None, "`?` on every key closes it");
         press(&mut app, "?x");

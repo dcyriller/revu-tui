@@ -13,6 +13,7 @@ mod field;
 mod ground;
 pub(crate) mod help;
 mod images;
+mod motion;
 mod outline_view;
 mod palette;
 mod palette_view;
@@ -25,6 +26,7 @@ mod queue_view;
 mod screen;
 mod share_view;
 mod table;
+mod taps_view;
 mod theme;
 mod thread_view;
 mod tree_view;
@@ -46,9 +48,7 @@ use futures_util::StreamExt;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-/// A screen that moves is looked at once per spinner step: nothing on it moves faster.
-const TICK: Duration = ui::SPINNER_FRAME;
-/// A screen that stood still for a tick is looked at once a second: ages, toasts and polls need no more.
+/// A screen that stood still for a tick is looked at once a second: ages, toasts, pulses and polls need no more.
 const IDLE_TICK: Duration = Duration::from_secs(1);
 
 /// Runs the review TUI until the user quits, restoring the terminal on the way out; on `start` in zen when given.
@@ -94,6 +94,7 @@ pub async fn run(ctx: Ctx, start: Option<crate::forge::MrKey>) -> Result<()> {
         queue_layout: ctx.config.tui.queue,
         zen_width: ctx.config.tui.zen_width,
         widths: ctx.config.tui.widths(),
+        tap_bar: ctx.config.tui.tap_bar,
         views: ctx.config.queue.views.clone().into_iter().collect(),
         share: crate::share::targets(&ctx.config.share),
         prefetch: ctx.config.queue.prefetch,
@@ -144,7 +145,7 @@ async fn event_loop(
         if changed {
             print_links(&hyperlinks(frame.buffer, &app.links));
         }
-        let next_tick = ticked + if changed { TICK } else { IDLE_TICK };
+        let next_tick = ticked + if changed { app.motion().tick() } else { IDLE_TICK };
         let actions = tokio::select! {
             Some(event) = keys.next() => match event? {
                 Event::Key(key) if key.kind != KeyEventKind::Release => { wake(app); app.handle_key(key) }
@@ -410,14 +411,6 @@ mod tests {
         shown.forget();
         assert!(shown.changed(&busy));
         assert!(shown.changed(&ratatui::buffer::Buffer::empty(area)));
-    }
-
-    #[test]
-    fn a_loading_screen_is_drawn_once_per_spinner_step() {
-        let drawn: Vec<&str> = (0..=20).map(|tick| ui::spinner(TICK * tick)).collect();
-        assert!(drawn.windows(2).all(|pair| pair[0] != pair[1]), "no tick draws the step already on screen: {drawn:?}");
-        let turn: std::collections::BTreeSet<&str> = drawn[..10].iter().copied().collect();
-        assert_eq!(turn.len(), 10, "and none of the ten steps is skipped: {drawn:?}");
     }
 
     #[test]

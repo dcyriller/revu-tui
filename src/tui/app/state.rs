@@ -40,6 +40,8 @@ pub struct Settings {
     pub zen_width: Option<u16>,
     /// `[tui] narrow_width` and `wide_width`.
     pub widths: crate::config::Widths,
+    /// `[tui] tap_bar`: a row of labels to tap under the compact layout.
+    pub tap_bar: bool,
     /// `[queue.views]`, in name order: saved filters `'` and the digits apply.
     /// `[share]`: where `Y` can post an MR, the bare target first.
     pub share: Vec<crate::share::Target>,
@@ -91,12 +93,20 @@ pub struct App {
     /// Queue sections folded to their header; Done starts folded.
     /// The review header on one row instead of two.
     pub header_folded: bool,
-    /// Long diff lines wrap under their text instead of ending in `…`, `w`.
-    pub wrap: bool,
+    /// Long diff lines wrap under their text instead of ending in `…`, once `w` chose; until then the layout does.
+    pub wrap: Option<bool>,
     /// Zen, `zz`: the diff alone in a centred column, no frames, no status line, nothing pulsing.
     pub zen: bool,
     /// The last frame was too narrow for the right pane beside the diff.
     pub narrow: bool,
+    /// The last frame showed the compact layout: one page at a time, full screen.
+    pub compact: bool,
+    /// The last frame was compact and too short for the rows around the page.
+    pub short: bool,
+    /// `[tui] tap_bar`: the compact layout ends on a row of labels to tap.
+    pub tap_bar: bool,
+    /// The labels of the tap bar, as this frame drew them.
+    pub taps: Vec<super::TapSpot>,
     /// How wide the diff reads in zen, `[tui] zen_width`; `None` grows it with the screen.
     pub zen_width: Option<u16>,
     /// The terminal widths the layout turns on, `[tui] narrow_width` and `wide_width`.
@@ -261,9 +271,13 @@ impl App {
             views: settings.views,
             filtering: false,
             header_folded: false,
-            wrap: false,
+            wrap: None,
             zen: false,
             narrow: false,
+            compact: false,
+            short: false,
+            tap_bar: settings.tap_bar,
+            taps: vec![],
             zen_width: settings.zen_width,
             widths: settings.widths,
             zen_switch: None,
