@@ -56,7 +56,7 @@ pub use feedback::Toast;
 pub use inbox::{Spot, progress_bar};
 pub use kept::{Kept, ReviewInputs};
 pub use mouse::{Areas, List, ListRow};
-pub use order::QueueView;
+pub use order::{QueueView, ViewChange, with as with_member};
 pub use outline::{Entry as OutlineEntry, Outline, PaneLine, Symbols};
 pub use pane::Pane;
 pub use pins::{MIN_HEIGHT as PIN_MIN_HEIGHT, Pins, pins, settle as settle_with_pins};
@@ -102,15 +102,18 @@ pub enum Action {
         scope: Option<String>,
         from_cache: bool,
     },
-    /// Remember how the queue of `scope` is sorted and grouped.
-    SaveQueueView {
+    /// Remember one change to how the queue of `scope` is sorted and grouped; `order` counts the changes made.
+    ChangeQueueView {
         scope: Option<String>,
-        view: QueueView,
+        change: ViewChange,
+        order: u64,
     },
-    /// Remember the MRs pinned in the queue of `scope`.
-    SavePins {
+    /// Remember `key` pinned, or unpinned, in the queue of `scope`; `order` counts the changes made.
+    ChangePin {
         scope: Option<String>,
-        pins: BTreeSet<MrKey>,
+        key: MrKey,
+        on: bool,
+        order: u64,
     },
     /// Paint from the cache at once, then fetch the MR, its diffs and its discussions.
     Open(MrKey),
@@ -347,8 +350,16 @@ pub enum Input {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Failure {
     Queue,
-    Open,
-    Poll,
+    /// Another host did not answer the queue; its rows are the ones it last answered.
+    Host,
+    /// Opening `key` failed; it matters only while `key` is the MR being opened.
+    Open {
+        key: MrKey,
+    },
+    /// Reading the open MR `key` again failed; it matters only while `key` is still open.
+    Poll {
+        key: MrKey,
+    },
     Local,
     /// The draft is not saved; `r` posts it again.
     Draft {

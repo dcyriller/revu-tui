@@ -241,6 +241,8 @@ share.json                          (shared root) per host, the share target I l
 Files are written to a temp name then renamed, mode 0600, directory 0700.
 `reactions.json` is read, changed and written under a lock on `reactions.json.lock` (`Cache::update`), so two revu processes adding at once both count; a missing or broken file is no history.
 `share.json` goes the same way; a missing or broken file, or a target since removed from the config, preselects the first target.
+Pins and the queue view are saved the same way, one change at a time (pin or unpin one MR, set one choice of the view), so two revu processes sharing a cache keep each other's.
+Of two changes to one MR's pin or one choice, the later one made wins even when the earlier one finishes last.
 Once a day, starting the TUI prunes every host's cache in the background: the forge is asked once per project which kept MRs are merged or closed (GitLab `merge_requests?iids[]=…&state=all`, GitHub one GraphQL query with a `pullRequest(number:)` alias per PR), and their `mr/…/<number>/` folders go; so does any MR folder untouched for 30 days, which also covers a project the forge cannot answer for. Pruning twice is harmless.
 Opening an MR paints from cache, then the MR, its discussions and drafts are read in parallel.
 While the `head_sha` is the one painted, no diff is read and the painted files stay, with all built on them; a differing one reads the diffs (from the cache when loading ahead kept them) and clears word-diff and fold state for changed files only.
@@ -252,7 +254,8 @@ While the `head_sha` is the one painted, no diff is read and the painted files s
   While the head sha is the one shown, that poll reads the MR alone; once it moved, diffs (from the cache when loading ahead kept them), discussions and drafts follow and the review is built again.
 - A change in the open MR shows in the status line (`● 2 new notes`, `● new commits`) until the next key; it never moves the cursor. Queue rows with activity since they were last opened carry a `●` that pulses once a second, steady in the compact layout.
 - Both forge clients keep the rate-limit count their answers report (`forge::budget`); under 100 requests left, every poll interval is five times longer, and a request waiting out a 429 shows `⏳ 42s` in the status line.
-- Backoff to 5 min after a `429` or a network error, reset after one success.
+- Backoff to 5 min after a `429` or a network error, reset after one success; when the forge asked a longer wait, polling resumes when it ends.
+- A failure names the MR it was for: opening one counts only while that MR is the one opening, a poll only while its MR is open, so a late answer for the MR left behind changes nothing.
 - A write the reader makes succeeds (approve, merge, publish, resolve, post, draft or ready): its effect shows at once from what revu knows (my approval counts in `approved_by` and `approvals_left`), then the MR and the queue are read again right away, so the forge's own numbers replace the guess within a request.
 
 No websocket: GitLab has none for this. Polling at these rates stays far under the 2000 requests/min limit observed.

@@ -19,6 +19,20 @@ Each entry says what changed, then where, then how to use it.
   In the list `Y` opens when you have several places to share to, on each host apart.
   It opens on the place you last shared to, so `Y` then `enter` repeats it; `1` to `9` pick one directly.
 
+### Fixed
+
+- **A second host that misses one refresh keeps its MRs.**
+  In the queue across several hosts, such as a GitLab behind a VPN: its last rows stay, and a toast names it.
+  Once it answers again, no notification comes for an MR you already had.
+- **Pins and the queue layout are never lost.**
+  In the queue, when you press `b` twice quickly, or run revu on a desktop and a phone at once.
+  Each revu keeps the other's pins, sort order and folded sections.
+- **A slow MR you left no longer spoils the next one.**
+  When an MR is slow to open and you open another: its late error no longer shows, marks you offline or blocks the new one.
+- **GitHub's secondary rate limit is waited out.**
+  On GitHub, when it asks revu to slow down while requests are left.
+  A short wait passes on its own; a long one says `rate limited until 14:05`, and refreshing comes back then.
+
 ## 0.8.0 - 2026-10-14
 
 ### New
