@@ -1,6 +1,7 @@
 //! What revu is used for, counted on this machine only: which actions, how long on each screen,
 //! and a few habits a faster key would replace. Opt-in with `[usage] enabled = true`.
 //! Nothing about the MRs is kept: no titles, paths, text, hosts or projects, only action names.
+use crate::act::{self, Act, Place, Row};
 use crate::cache::Cache;
 use anyhow::{Result, bail};
 use chrono::NaiveDate;
@@ -11,14 +12,6 @@ use std::time::Duration;
 
 /// The file, at the cache root; deleting it starts the counts again.
 pub const FILE: &str = "usage.jsonl";
-
-/// Where a key landed, which is what decides the action a key stands for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Place {
-    Queue,
-    Diff,
-    Pane,
-}
 
 /// How the report groups actions, in the order a review goes; anything not listed lands in OTHER,
 /// so a new action shows up without anyone updating this table.
@@ -127,178 +120,53 @@ pub const HINTS: &[(&str, &str)] = &[
 pub fn known() -> Vec<&'static str> {
     crate::act::listed_names().collect()
 }
+/// The key that opens the saved views; any letter after it picks one.
+const VIEWS_PREFIX: char = '\'';
+
+/// Moves held with ctrl are not counted.
+const NOT_WITH_CTRL: &[Act] = &[Act::MoveDown, Act::MoveUp, Act::Top, Act::Bottom, Act::Open];
 
 /// The action a key stands for, after the user's bindings turned it into revu's own.
 /// `prefix` is the first key of a two-key sequence already typed (`z`, `[`, `]`, `a`, `'`).
 pub fn action(prefix: Option<char>, key: KeyEvent, place: Place) -> Option<&'static str> {
-    match prefix {
+    let act = match prefix {
         Some(prefix) => prefixed(prefix, key),
         None => single(key, place),
-    }
+    };
+    act?.row().name.counted()
 }
 
-fn prefixed(prefix: char, key: KeyEvent) -> Option<&'static str> {
+fn prefixed(prefix: char, key: KeyEvent) -> Option<Act> {
     let KeyCode::Char(c) = key.code else { return None };
-    let forward = prefix == ']';
-    Some(match (prefix, c) {
-        ('\'', _) => "views",
-        ('z', 'a') => "fold_toggle",
-        ('z', 'o') => "fold_open",
-        ('z', 'c') => "fold_close",
-        ('z', 'M') => "fold_all",
-        ('z', 'R') => "unfold_all",
-        ('z', 'h') => "fold_header",
-        ('z', 'v') => "viewed",
-        ('z', 'z') => "zen",
-        ('[' | ']', 'n') => pick(forward, "next_thread", "prev_thread"),
-        ('[' | ']', 'N') => pick(forward, "next_any_thread", "prev_any_thread"),
-        ('[' | ']', 'c') => pick(forward, "next_hunk", "prev_hunk"),
-        ('[' | ']', 'f') => pick(forward, "next_file_unresolved", "prev_file_unresolved"),
-        ('[' | ']', 'r') => pick(forward, "next_review", "prev_review"),
-        ('[' | ']', 'm') => pick(forward, "next_mr", "prev_mr"),
-        ('a', 'e') => "ask_explain",
-        ('a', 'r') => "ask_risks",
-        ('a', 's') => "ask_summary",
-        ('a', 't') => "ask_thread",
-        ('a', 'c') => "ask_comment",
-        ('a', 'a') => "ask_free",
-        ('a', 'g') => "session",
-        _ => return None,
-    })
+    if prefix == VIEWS_PREFIX {
+        return Some(Act::Views);
+    }
+    act::act_after(prefix, c)
 }
 
-fn pick(forward: bool, next: &'static str, prev: &'static str) -> &'static str {
-    if forward { next } else { prev }
-}
-
-fn single(key: KeyEvent, place: Place) -> Option<&'static str> {
+/// A key alone: ctrl keys first, then the key whatever its modifiers, among the actions counted in `place`.
+fn single(key: KeyEvent, place: Place) -> Option<Act> {
+    if is_palette_chord(key) {
+        return Some(Act::Jump);
+    }
+    let counted_here = |row: &Row| row.counts.contains(&place);
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    let command = key.modifiers.contains(KeyModifiers::SUPER);
-    let palette_chord = matches!(key.code, KeyCode::Char('k' | 'K')) && (ctrl || command);
-    if palette_chord || key.code == KeyCode::Char(',') {
-        return Some("jump");
+    if ctrl && let Some(act) = act::with_key(key.code, KeyModifiers::CONTROL, counted_here) {
+        return Some(act);
     }
-    if ctrl && key.code == KeyCode::Char('v') && place != Place::Queue {
-        return Some("view_file");
+    if let KeyCode::Char(c) = key.code
+        && (c == VIEWS_PREFIX || act::is_prefix(c))
+    {
+        return None;
     }
-    if let Some(moved) = movement(key.code, ctrl) {
-        return Some(moved);
-    }
-    match key.code {
-        KeyCode::Char(':') => Some("palette"),
-        KeyCode::Char('q') => Some("quit"),
-        KeyCode::Char('?') => Some("help"),
-        KeyCode::Char('Y') => Some("share"),
-        KeyCode::Char('h') | KeyCode::Left => Some("focus_left"),
-        KeyCode::Char('l') | KeyCode::Right => Some("focus_right"),
-        KeyCode::Char('z' | '[' | ']' | 'a' | '\'') => None,
-        _ => match place {
-            Place::Queue => queue_key(key.code),
-            Place::Diff => diff_key(key.code),
-            Place::Pane => pane_key(key.code),
-        },
-    }
+    act::with_key(key.code, KeyModifiers::NONE, counted_here).filter(|act| !(ctrl && NOT_WITH_CTRL.contains(act)))
 }
 
-fn movement(code: KeyCode, ctrl: bool) -> Option<&'static str> {
-    Some(match code {
-        KeyCode::Char('d') if ctrl => "page_down",
-        KeyCode::Char('u') if ctrl => "page_up",
-        KeyCode::Char('f') if ctrl => "full_page_down",
-        KeyCode::Char('b') if ctrl => "full_page_up",
-        _ if ctrl => return None,
-        KeyCode::Char('j') | KeyCode::Down => "move_down",
-        KeyCode::Char('k') | KeyCode::Up => "move_up",
-        KeyCode::Char('g') => "top",
-        KeyCode::Char('G') => "bottom",
-        KeyCode::Enter => "open",
-        _ => return None,
-    })
+/// `ctrl-k` or `⌘k`, either case.
+fn is_palette_chord(key: KeyEvent) -> bool {
+    let is_k = matches!(key.code, KeyCode::Char('k' | 'K'));
+    is_k && key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER)
 }
-
-fn queue_key(code: KeyCode) -> Option<&'static str> {
-    Some(match code {
-        KeyCode::Char('/') => "filter",
-        KeyCode::Char('*') => "scope",
-        KeyCode::Char('s') => "sort_queue",
-        KeyCode::Char('S') => "group_by_author",
-        KeyCode::Char('b') => "pin",
-        KeyCode::Char('1'..='9') => "views",
-        KeyCode::Char('i') => "description",
-        KeyCode::Char('r') => "refresh",
-        KeyCode::Char('o') => "open_browser",
-        KeyCode::Char('y') => "copy_link",
-        KeyCode::Esc => "back",
-        _ => return None,
-    })
-}
-
-fn diff_key(code: KeyCode) -> Option<&'static str> {
-    Some(match code {
-        KeyCode::Char('c') => "comment",
-        KeyCode::Char('C') => "comment_old",
-        KeyCode::Char('V') => "select",
-        KeyCode::Char('E') => "editor",
-        KeyCode::Char('R') => "resolve",
-        KeyCode::Char('m') => "viewed",
-        KeyCode::Char('s') => "suggest",
-        KeyCode::Char('A') => "approve",
-        KeyCode::Char('M') => "merge",
-        KeyCode::Char('H') => "ready",
-        KeyCode::Char('P') => "publish",
-        KeyCode::Char('D') => "side_by_side",
-        KeyCode::Char('>') => "peek_after",
-        KeyCode::Char('<') => "peek_before",
-        KeyCode::Char('t') => "tree",
-        KeyCode::Char('T') => "every_thread",
-        KeyCode::Char('p') => "pipeline",
-        KeyCode::Char('O') => "outline",
-        KeyCode::Char('v') => "prose",
-        KeyCode::Char('W') => "whitespace",
-        KeyCode::Char('w') => "wrap",
-        KeyCode::Char('=') => "more_context",
-        KeyCode::Char('+') => "react",
-        KeyCode::Tab => "next_file",
-        KeyCode::BackTab => "prev_file",
-        KeyCode::Char('r') => "refresh",
-        KeyCode::Char('i') => "description",
-        KeyCode::Char('o') => "open_browser",
-        KeyCode::Char('y') => "copy_link",
-        KeyCode::Esc => "back",
-        _ => return None,
-    })
-}
-
-fn pane_key(code: KeyCode) -> Option<&'static str> {
-    Some(match code {
-        KeyCode::Char('J') => "next_in_line",
-        KeyCode::Char('K') => "prev_in_line",
-        KeyCode::Char('T') => "every_thread",
-        KeyCode::Char('P') => "publish",
-        KeyCode::Esc | KeyCode::Char('x') => "close_pane",
-        _ => return thread_key(code),
-    })
-}
-
-/// The action of a key that acts on the thread, note or draft under the cursor, in the pane or on a thread row
-/// of the diff.
-pub fn thread_key(code: KeyCode) -> Option<&'static str> {
-    Some(match code {
-        KeyCode::Char('u') => "open_link",
-        KeyCode::Char('U') => "copy_first_link",
-        KeyCode::Char('o') => "open_browser",
-        KeyCode::Char('y') => "copy_link",
-        KeyCode::Char('r' | 'c') => "reply",
-        KeyCode::Char('R') => "resolve",
-        KeyCode::Char('S') => "apply_suggestion",
-        KeyCode::Char('+') => "react",
-        KeyCode::Char('e') => "edit_draft",
-        KeyCode::Char('d') => "delete_draft",
-        KeyCode::Char('E') => "editor",
-        _ => return None,
-    })
-}
-
 /// How often a hint shows as a toast, over every session; after that only the report counts it.
 const HINT_TOASTS: u64 = 3;
 
