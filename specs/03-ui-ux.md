@@ -257,7 +257,7 @@ While the pane is on a range comment, the range's other lines show `│` in `acc
 
 ### Find in the MR (`/`)
 
-`/` in the diff opens a line in the status row: each key typed moves the cursor to the first match from where the search started, and every match on screen is drawn reversed. The search covers the whole MR, not the screen: every line of every hunk, both sides, and each file's path, folded files and hunks included (`[review] fold`, too large, viewed); a match inside a fold opens it. Smart case: all lowercase matches any case, a capital asks for the exact one. `enter` keeps the search, `esc` while typing drops it and puts the cursor back. Then `n` and `N` go to the next and previous match, round the end of the MR with a toast, and the status row counts `3/17`; `esc` clears it. A user binding on `n` or `N` wins over these.
+`/` in the diff opens a line in the status row: each key typed moves the cursor to the first match from where the search started, and every match on screen is drawn reversed. The search covers the whole MR, not the screen: every line of every hunk, both sides, and each file's path, folded files and hunks included (`[review] fold`, too large, viewed); a match inside a fold opens it. Smart case: all lowercase matches any case, a capital asks for the exact one. `enter` keeps the search, `esc` while typing drops it and puts the cursor back. Then `n` and `N` go to the next and previous match, round the end of the MR with a toast, and the status row counts `3/17`; `esc` clears it. With no search kept, `n` and `N` are `]n` and `[n`, and count as them. A user binding on `n` or `N` wins over these.
 
 ### Visual select
 
@@ -274,7 +274,7 @@ One of:
 - **Files** (`t`): a tree with folders before files, folders deeper than two levels folded, `+adds −dels`, `◆n` unresolved threads and `✓` viewed on each file; `enter` on a folder folds it, on a file jumps the diff there (the tree stays open), `t` or `esc` closes it. The title counts viewed files.
 - **AI answer** (M4): title `ask · file` and the streaming markdown; a `cached` tag when served from cache.
 
-`zv` (in the diff or the tree) marks the file viewed and folds it. Viewed files are saved per MR with a fingerprint of their change: a file the author pushes to again comes back unviewed.
+`zv` (in the diff or the tree) marks the file viewed and folds it; the cursor stays on its header. `m` in the diff does the same, then moves to the first changed line of the next file not viewed yet, round the end of the MR; a next file that waits folded stops the cursor on its header, and with every file viewed it stays with a toast. On a viewed file `m` unmarks it and stays, as `zv` does. Viewed files are saved per MR with a fingerprint of their change: a file the author pushes to again comes back unviewed.
 
 The MR's description, checks, reviews, threads and files are the cover (`i`), drawn over the main area rather than in this pane; `o` opens the MR in the browser and `y` copies its link.
 
@@ -340,11 +340,13 @@ Marked `M1` `M2` `M3` `M4` by milestone. Everything is in `?` `?`.
 | `]c` `[c` | next, previous change (hunk) | M1 |
 | `]n` `[n` | next, previous line with an unresolved thread or my draft, in every file: a folded file or hunk on the way opens and stays open; nothing left says `]N` | M1 |
 | `]N` `[N` | the same, resolved threads too | M1 |
+| `n` `N` | `]n` `[n`, while no search is kept | post-M5 |
 | `]f` `[f` | next, previous file with unresolved threads | M1 |
 | `za` | toggle fold under the cursor | M1 |
 | `zc` `zo` | close, open | M1 |
 | `zM` `zR` | fold, unfold every file | M1 |
 | `zv` | mark viewed (folds) | M3 |
+| `m` | mark viewed, on to the first change of the next file not viewed | post-M5 |
 | `t` | file tree | M3 |
 | `T` | every thread of the MR in the right pane (`09-thread-pane.md` § Every thread) | M3b |
 | `p` | pipeline: jobs by stage, failures first, `o` opens a job | M5 |

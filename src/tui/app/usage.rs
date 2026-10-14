@@ -250,6 +250,28 @@ mod tests {
     }
 
     #[test]
+    fn m_counts_as_viewed() {
+        let mut app = counting();
+        to_step(&mut app, 1);
+        press(&mut app, "m");
+        assert_eq!(app.take_usage().unwrap().actions.get("viewed"), Some(&1));
+    }
+
+    #[test]
+    fn n_counts_as_a_thread_jump_only_with_no_search() {
+        let mut app = counting();
+        press(&mut app, "nN");
+        let counts = app.take_usage().unwrap();
+        assert_eq!((counts.actions.get("next_thread"), counts.actions.get("prev_thread")), (Some(&1), Some(&1)));
+        press(&mut app, "/step");
+        app.handle_key(code(KeyCode::Enter));
+        app.take_usage();
+        press(&mut app, "nN");
+        let stepped = app.take_usage().map(|counts| counts.actions).unwrap_or_default();
+        assert_eq!((stepped.get("next_thread"), stepped.get("prev_thread")), (None, None), "{stepped:?}");
+    }
+
+    #[test]
     fn typed_text_is_never_counted() {
         let mut app = counting();
         to_step(&mut app, 1);
