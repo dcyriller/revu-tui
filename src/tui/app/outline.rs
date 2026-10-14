@@ -5,7 +5,7 @@ mod rows;
 
 pub use rows::{Entry, PaneLine, Rows};
 
-use crate::act::{self, Act, Pane};
+use crate::act::{Act, Pane};
 use crate::outline::{Direction, Reading, Section, Shape};
 use crate::review::{Place, Review, Row, Side};
 use crossterm::event::KeyEvent;
@@ -138,14 +138,18 @@ impl App {
     }
 
     pub(super) fn handle_outline_key(&mut self, key: KeyEvent) -> Vec<Action> {
+        let act = self.act_here(Pane::Outline, key);
         let Some(outline) = self.open.as_ref().and_then(|o| o.outline.as_ref()) else { return vec![] };
         let last = outline.rows.entries.len().saturating_sub(1);
         let moved = |selected: usize| Outline { selected: selected.min(last), ..outline.clone() };
-        let next = match act::act_in(Pane::Outline, key) {
+        let page = super::keys::full_page(self.areas.side).unsigned_abs();
+        let next = match act {
             Some(Act::MoveDown) => moved(outline.selected + 1),
             Some(Act::MoveUp) => moved(outline.selected.saturating_sub(1)),
             Some(Act::PageDown) => moved(outline.selected + 10),
             Some(Act::PageUp) => moved(outline.selected.saturating_sub(10)),
+            Some(Act::FullPageDown) => moved(outline.selected.saturating_add(page)),
+            Some(Act::FullPageUp) => moved(outline.selected.saturating_sub(page)),
             Some(Act::Top) => moved(0),
             Some(Act::Bottom) => moved(last),
             Some(Act::OutlinePublic) => outline.shown_as(|o| Outline { all: !o.all, ..o }),
@@ -158,7 +162,10 @@ impl App {
                 self.close_outline();
                 return vec![];
             }
-            _ => return vec![],
+            _ => {
+                self.did_nothing();
+                return vec![];
+            }
         };
         self.update_open(|open| open.with_outline(Some(next)));
         vec![]
@@ -172,6 +179,9 @@ impl App {
             Some(Act::FoldToggle) => None,
             _ => return,
         };
+        if let Some(act) = act {
+            self.did(act);
+        }
         let Some(outline) = self.open.as_ref().and_then(|o| o.outline.as_ref()) else { return };
         let folded = outline.folding(open);
         self.update_open(|open| open.with_outline(Some(folded)));
@@ -317,6 +327,18 @@ mod tests {
         press(&mut app, "O");
         assert!(app.open.as_ref().unwrap().outline.is_none());
         assert_eq!(app.focus, Focus::Review);
+    }
+
+    #[test]
+    fn a_full_page_moves_in_the_outline() {
+        let selected = |app: &App| app.open.as_ref().unwrap().outline.as_ref().unwrap().selected;
+        let mut paged = with_outline();
+        let mut last = with_outline();
+        press(&mut last, "G");
+        paged.handle_key(ctrl('f'));
+        assert_eq!(selected(&paged), selected(&last));
+        paged.handle_key(ctrl('b'));
+        assert_eq!(selected(&paged), 0);
     }
 
     #[test]

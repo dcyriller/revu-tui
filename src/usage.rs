@@ -1,113 +1,16 @@
 //! What revu is used for, counted on this machine only: which actions, how long on each screen,
 //! and a few habits a faster key would replace. Opt-in with `[usage] enabled = true`.
 //! Nothing about the MRs is kept: no titles, paths, text, hosts or projects, only action names.
-use crate::act::{self, Act, Place, Row};
+use crate::act::{self, Section};
 use crate::cache::Cache;
 use anyhow::{Result, bail};
 use chrono::NaiveDate;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 /// The file, at the cache root; deleting it starts the counts again.
 pub const FILE: &str = "usage.jsonl";
-
-/// How the report groups actions, in the order a review goes; anything not listed lands in OTHER,
-/// so a new action shows up without anyone updating this table.
-const GROUPS: &[(&str, &[&str])] = &[
-    (
-        "move",
-        &[
-            "move_down",
-            "move_up",
-            "page_down",
-            "page_up",
-            "full_page_down",
-            "full_page_up",
-            "top",
-            "bottom",
-            "focus_left",
-            "focus_right",
-            "open",
-            "back",
-        ],
-    ),
-    (
-        "jump",
-        &[
-            "next_thread",
-            "prev_thread",
-            "next_any_thread",
-            "prev_any_thread",
-            "next_hunk",
-            "prev_hunk",
-            "next_file",
-            "prev_file",
-            "next_file_unresolved",
-            "prev_file_unresolved",
-            "next_review",
-            "prev_review",
-            "next_mr",
-            "prev_mr",
-        ],
-    ),
-    ("queue", &["refresh", "scope", "sort_queue", "group_by_author", "filter", "views"]),
-    (
-        "view",
-        &[
-            "fold_toggle",
-            "fold_open",
-            "fold_close",
-            "fold_all",
-            "unfold_all",
-            "fold_header",
-            "viewed",
-            "zen",
-            "side_by_side",
-            "peek_after",
-            "peek_before",
-            "tree",
-            "pipeline",
-            "outline",
-            "prose",
-            "wrap",
-            "whitespace",
-            "more_context",
-            "view_file",
-            "description",
-        ],
-    ),
-    (
-        "comment & publish",
-        &["comment", "comment_old", "select", "suggest", "editor", "resolve", "publish", "approve", "merge", "ready", "share"],
-    ),
-    (
-        "thread pane",
-        &[
-            "every_thread",
-            "reply",
-            "react",
-            "apply_suggestion",
-            "edit_draft",
-            "delete_draft",
-            "close_pane",
-            "next_in_line",
-            "prev_in_line",
-            "open_link",
-            "copy_first_link",
-        ],
-    ),
-    ("ask claude", &["ask_explain", "ask_risks", "ask_summary", "ask_thread", "ask_comment", "ask_free"]),
-    ("search & app", &["palette", "jump", "palette_mr", "palette_file", "open_browser", "copy_link", "session", "help", "quit"]),
-    (
-        "commands",
-        &[
-            ":go", ":open", ":copy", ":approve", ":merge", ":ready", ":publish", ":threads", ":all", ":outline", ":set", ":view", ":ai",
-            ":ask", ":share", ":session", ":help", ":quit",
-        ],
-    ),
-];
 
 /// A habit a faster key replaces, with what to try instead.
 pub const HINTS: &[(&str, &str)] = &[
@@ -118,55 +21,9 @@ pub const HINTS: &[(&str, &str)] = &[
 
 /// Every action the report knows, bindable ones first.
 pub fn known() -> Vec<&'static str> {
-    crate::act::listed_names().collect()
-}
-/// The key that opens the saved views; any letter after it picks one.
-const VIEWS_PREFIX: char = '\'';
-
-/// Moves held with ctrl are not counted.
-const NOT_WITH_CTRL: &[Act] = &[Act::MoveDown, Act::MoveUp, Act::Top, Act::Bottom, Act::Open];
-
-/// The action a key stands for, after the user's bindings turned it into revu's own.
-/// `prefix` is the first key of a two-key sequence already typed (`z`, `[`, `]`, `a`, `'`).
-pub fn action(prefix: Option<char>, key: KeyEvent, place: Place) -> Option<&'static str> {
-    let act = match prefix {
-        Some(prefix) => prefixed(prefix, key),
-        None => single(key, place),
-    };
-    act?.row().name.counted()
+    crate::act::listed_names()
 }
 
-fn prefixed(prefix: char, key: KeyEvent) -> Option<Act> {
-    let KeyCode::Char(c) = key.code else { return None };
-    if prefix == VIEWS_PREFIX {
-        return Some(Act::Views);
-    }
-    act::act_after(prefix, c)
-}
-
-/// A key alone: ctrl keys first, then the key whatever its modifiers, among the actions counted in `place`.
-fn single(key: KeyEvent, place: Place) -> Option<Act> {
-    if is_palette_chord(key) {
-        return Some(Act::Jump);
-    }
-    let counted_here = |row: &Row| row.counts.contains(&place);
-    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    if ctrl && let Some(act) = act::with_key(key.code, KeyModifiers::CONTROL, counted_here) {
-        return Some(act);
-    }
-    if let KeyCode::Char(c) = key.code
-        && (c == VIEWS_PREFIX || act::is_prefix(c))
-    {
-        return None;
-    }
-    act::with_key(key.code, KeyModifiers::NONE, counted_here).filter(|act| !(ctrl && NOT_WITH_CTRL.contains(act)))
-}
-
-/// `ctrl-k` or `⌘k`, either case.
-fn is_palette_chord(key: KeyEvent) -> bool {
-    let is_k = matches!(key.code, KeyCode::Char('k' | 'K'));
-    is_k && key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER)
-}
 /// How often a hint shows as a toast, over every session; after that only the report counts it.
 const HINT_TOASTS: u64 = 3;
 
@@ -383,19 +240,18 @@ pub fn report(days: &[Day], today: NaiveDate, window: Option<u32>) -> Report {
         hints: HINTS.iter().filter_map(|(name, text)| hints.get(*name).map(|n| ((*name).to_owned(), *n, (*text).to_owned()))).collect(),
     }
 }
-
 /// Names by report group, groups in review order, OTHER last for anything no group lists.
 fn grouped<'a>(names: impl Iterator<Item = &'a str>) -> Vec<(String, Vec<String>)> {
     let names: Vec<&str> = names.collect();
-    let mut out: Vec<(String, Vec<String>)> = GROUPS
+    let members_of =
+        |section: Section| act::listed_in(section).into_iter().filter(|m| names.contains(m)).map(str::to_owned).collect::<Vec<_>>();
+    let mut out: Vec<(String, Vec<String>)> = Section::ALL
         .iter()
-        .map(|(group, members)| {
-            ((*group).to_owned(), members.iter().filter(|m| names.contains(m)).map(|m| (*m).to_owned()).collect::<Vec<_>>())
-        })
+        .map(|report| (report.title().to_owned(), members_of(*report)))
         .filter(|(_, members)| !members.is_empty())
         .collect();
-    let other: Vec<String> =
-        names.iter().filter(|name| !GROUPS.iter().any(|(_, members)| members.contains(name))).map(|n| (*n).to_owned()).collect();
+    let is_in_a_group = |name: &str| Section::ALL.iter().any(|report| act::listed_in(*report).contains(&name));
+    let other: Vec<String> = names.iter().filter(|name| !is_in_a_group(name)).map(|n| (*n).to_owned()).collect();
     if !other.is_empty() {
         out.push(("other".to_owned(), other));
     }
@@ -416,45 +272,8 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
-    fn key(c: char) -> KeyEvent {
-        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
-    }
-
     fn date(text: &str) -> NaiveDate {
         text.parse().unwrap()
-    }
-
-    #[test]
-    fn keys_name_their_action_by_where_they_land() {
-        assert_eq!(action(None, key('s'), Place::Queue), Some("sort_queue"));
-        assert_eq!(action(None, key('s'), Place::Diff), Some("suggest"));
-        assert_eq!(action(None, key('S'), Place::Pane), Some("apply_suggestion"));
-        assert_eq!(action(None, key('+'), Place::Pane), Some("react"));
-        assert_eq!(action(None, key('+'), Place::Diff), Some("react"));
-        assert_eq!(action(None, key('='), Place::Diff), Some("more_context"));
-        assert_eq!(action(Some(']'), key('m'), Place::Diff), Some("next_mr"));
-        assert_eq!(action(None, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), Place::Diff), Some("focus_right"));
-        assert_eq!(action(Some(']'), key('n'), Place::Diff), Some("next_thread"));
-        assert_eq!(action(Some('['), key('N'), Place::Diff), Some("prev_any_thread"));
-        assert_eq!(action(Some('a'), key('r'), Place::Diff), Some("ask_risks"));
-        assert_eq!(action(None, key('z'), Place::Diff), None, "a prefix alone is no action");
-        assert_eq!(action(None, KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL), Place::Queue), Some("jump"));
-    }
-
-    #[test]
-    fn every_bindable_action_can_be_counted() {
-        let places = [Place::Queue, Place::Diff, Place::Pane];
-        for (name, keys) in crate::act::bindable() {
-            let events = crate::keymap::parse(keys).unwrap();
-            let (prefix, last) = match events.as_slice() {
-                [only] if only.plain_char() == Some('\'') => (Some('\''), key('m')),
-                [only] => (None, only.event()),
-                [first, second] => (first.plain_char(), second.event()),
-                _ => panic!("{name}"),
-            };
-            let found = places.iter().any(|place| action(prefix, last, *place) == Some(name));
-            assert!(found, "`{name}` ({keys}) is never counted");
-        }
     }
 
     #[test]
@@ -576,11 +395,27 @@ mod tests {
     }
 
     #[test]
+    fn every_countable_action_is_known_once_in_the_order_of_the_table() {
+        let known = known();
+        for name in ["pin", ":ready", ":pin", ":unpin", ":outline", ":session", ":news"] {
+            assert!(known.contains(&name), "`{name}` is counted, so it shows when unused");
+        }
+        assert_eq!(known.iter().filter(|name| **name == "viewed").count(), 1, "`m` and `zv` share a name");
+        let commands: Vec<String> = crate::act::verbs().map(|verb| format!(":{}", verb.word)).collect();
+        let report = grouped(known.iter().copied());
+        assert_eq!(
+            report.iter().find(|(group, _)| group == "commands").map(|(_, names)| names),
+            Some(&commands),
+            "as the palette lists them"
+        );
+    }
+
+    #[test]
     fn an_action_no_group_lists_still_shows() {
         let groups = grouped(["next_thread", "brand_new"].into_iter());
         assert_eq!(groups.last().unwrap(), &("other".to_owned(), vec!["brand_new".to_owned()]));
         for name in known() {
-            let listed = GROUPS.iter().any(|(_, members)| members.contains(&name));
+            let listed = Section::ALL.iter().any(|report| act::listed_in(*report).contains(&name));
             assert!(listed, "`{name}` belongs in a report group");
         }
     }

@@ -1,6 +1,6 @@
 //! The file tree in the right pane (`t`) and viewed files (`zv`, `m`).
 use super::{Action, App, Focus, Open};
-use crate::act::{self, Act, Pane};
+use crate::act::{Act, Pane};
 use crate::diff::LineKind;
 use crate::diff::fold::Fold;
 use crate::review::tree::{self, TreeFolds, TreeRow};
@@ -50,24 +50,33 @@ impl App {
         let rows = self.kept.tree_rows(open);
         let (last, here) = (rows.len().saturating_sub(1), rows.get(tree.selected).cloned());
         let moved = |selected: usize| Some(Tree { selected: selected.min(last), ..tree.clone() });
-        let next = match act::act_in(Pane::Tree, key) {
+        let page = super::keys::full_page(self.areas.side).unsigned_abs();
+        let next = match self.act_here(Pane::Tree, key) {
             Some(Act::MoveDown) => moved(tree.selected + 1),
             Some(Act::MoveUp) => moved(tree.selected.saturating_sub(1)),
             Some(Act::PageDown) => moved(tree.selected + 10),
             Some(Act::PageUp) => moved(tree.selected.saturating_sub(10)),
+            Some(Act::FullPageDown) => moved(tree.selected.saturating_add(page)),
+            Some(Act::FullPageUp) => moved(tree.selected.saturating_sub(page)),
             Some(Act::Top) => moved(0),
             Some(Act::Bottom) => moved(last),
-            Some(Act::Back | Act::Tree) => None,
-            Some(Act::ViewFile) => match here {
-                Some(TreeRow::File { index, .. }) => return self.view_file(index),
-                _ => Some(tree.clone()),
-            },
+            Some(Act::Back | Act::Tree | Act::ClosePane) => None,
+            Some(Act::ViewFile) => {
+                if let Some(TreeRow::File { index, .. }) = here {
+                    return self.view_file(index);
+                }
+                self.did_nothing();
+                Some(tree.clone())
+            }
             Some(Act::Open) => match here {
                 Some(TreeRow::Folder { path, .. }) => Some(Tree { folds: tree.folds.toggled(&path), ..tree.clone() }),
                 Some(TreeRow::File { index, .. }) => return self.show_file(index),
                 None => Some(tree.clone()),
             },
-            _ => Some(tree.clone()),
+            _ => {
+                self.did_nothing();
+                Some(tree.clone())
+            }
         };
         if next.is_none() {
             self.focus = Focus::Review;
@@ -142,6 +151,25 @@ fn is_first_stop(files: &[File], unviewed: &[bool], row: &Row) -> bool {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use crate::tui::app::test_support::*;
+
+    fn tree_row(app: &App) -> usize {
+        app.open.as_ref().unwrap().tree.as_ref().unwrap().selected
+    }
+
+    #[test]
+    fn a_full_page_moves_in_the_tree_and_x_closes_it() {
+        let mut paged = with_review();
+        let mut last = with_review();
+        press(&mut paged, "tg");
+        press(&mut last, "tG");
+        paged.handle_key(ctrl('f'));
+        assert_eq!(tree_row(&paged), tree_row(&last), "a page longer than the tree reaches its end");
+        paged.handle_key(ctrl('b'));
+        assert_eq!(tree_row(&paged), 0);
+        press(&mut paged, "x");
+        assert!(paged.open.as_ref().unwrap().tree.is_none());
+        assert_eq!(paged.focus, Focus::Review);
+    }
 
     #[test]
     fn t_opens_the_tree_on_the_file_under_the_cursor_and_enter_jumps_back() {

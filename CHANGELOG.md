@@ -21,6 +21,22 @@ Each entry says what changed, then where, then how to use it.
 
 ### Fixed
 
+- **Paging down at the end of a Markdown file no longer stops revu.**
+  In the prose view (`v`), after `G`, with `^f` or PgDn.
+- **A letter pressed with ctrl no longer does what the letter alone does.**
+  Everywhere outside a text box: `^t` no longer closes the file tree, `^r` no longer replies, `^j` no longer moves.
+  Only the ctrl keys the help lists act: `^d` `^u` `^f` `^b` `^k` `^v` and `^c`.
+- **The file tree, the outline and the pipeline page like the other panes.**
+  In the right pane: `^f` and `^b` move a full page there too, and `x` closes the file tree.
+- **`[keys.bind]` no longer takes `a c` or the arrow keys from revu.**
+  In `config.toml`: revu stops at start and names the key, as it does for any key already taken.
+- **`revu usage` counts what each key did.**
+  In `revu usage`: a key that does nothing, like `c` in prose, no longer counts; `enter` in the thread pane counts as what it did.
+- **`revu usage` lists every action it counts, in one order.**
+  Under NEVER USED and RARELY USED: `b`, `:ready`, `:pin` and the other commands now show when unused.
+  Actions follow the order of the keys reference, and commands the order of the palette.
+- **Your own keys work on the cover page.**
+  On the MR cover page, `i`: a key from `[keys.bind]` does what its action does there, as in every other pane.
 - **A second host that misses one refresh keeps its MRs.**
   In the queue across several hosts, such as a GitLab behind a VPN: its last rows stay, and a toast names it.
   Once it answers again, no notification comes for an MR you already had.
