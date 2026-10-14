@@ -33,6 +33,7 @@ In a narrow window and in zen it sits in the diff, under the line or the thread 
 `⌥enter` adds a new line, `↑` and `↓` move between lines.
 `⌥←` and `⌥→` jump a word, `⌥⌫` deletes the word before the cursor.
 `ctrl-o` moves the text to `$EDITOR`.
+When the editor exits with an error, as vim does on `:cq`, the text you wrote waits in the box: `enter` saves it.
 `esc` leaves the box and keeps the text for later.
 
 ## Read and answer threads
@@ -96,6 +97,16 @@ Set `[tui] ascii = true` when your terminal draws emoji at the wrong width.
 | `m` | Move a draft whose line is gone to the MR itself |
 
 `A` approves or unapproves without publishing.
+
+Publishing sends what the forge holds, so it waits until every draft change has reached it.
+While a save, an edit or a delete is on its way, `enter` says so: publish again in a moment.
+When the forge refuses an edit or a delete, for example while you are offline, the draft comes back as the forge holds it.
+The new text of a refused edit waits in the comment box.
+Publishing then waits until `r` has read the drafts again, so you see what would go out.
+
+On GitLab the approval is a second step.
+When GitLab publishes the comments but refuses the approval, the warning says `published 2 comments, not approved:` and why.
+The comments are out: press `A` to approve again once the cause is fixed.
 
 ## Draft or ready
 

@@ -1,6 +1,7 @@
 //! The one-row input under the panes: what it is for, and what happens to the text on `enter`.
 use super::{Action, App, Input, MrKey, Open, Post};
 use crate::review::{Draft, DraftId, Place, Review};
+use crate::tui::compose::Edited;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 impl App {
@@ -119,12 +120,26 @@ impl App {
         self.composed.extend(follow);
     }
 
-    /// The box comes back with the text when nothing else is being written on that MR.
     pub(super) fn post_failed(&mut self, key: &MrKey, to: &Post, message: &str) {
         self.warn(format!("not posted: {message}"));
+        self.reopen_input(key, to.input());
+    }
+
+    /// `text` waits under `input`, in the box at once when nothing else is being written on that MR.
+    pub(super) fn offer_again(&mut self, key: &MrKey, input: Input, text: String) {
+        self.unsent.insert(target_key(&input), text);
+        self.reopen_input(key, input);
+    }
+
+    /// The box comes back with the text left unsent when nothing else is being written on that MR.
+    fn reopen_input(&mut self, key: &MrKey, input: Input) {
         if self.input.is_none() && self.open.as_ref().is_some_and(|o| &o.key == key) {
-            self.open_input(to.input(), "");
+            self.open_input(input, "");
         }
+    }
+
+    pub(super) fn is_unsent(&self, input: &Input) -> bool {
+        self.unsent.contains_key(&target_key(input))
     }
 
     fn submit_input(&mut self) -> Vec<Action> {
@@ -151,6 +166,19 @@ impl App {
         }
     }
 
+    /// What the editor gave back becomes a draft; after an editor error the text waits in the box, to be read before it is saved.
+    pub(super) fn apply_composed(&mut self, input: Input, edited: Edited) {
+        match edited {
+            Edited::Cancelled => {}
+            Edited::Done(text) => self.composed = self.submit(input, text),
+            Edited::Errored(text) if self.open.is_some() => {
+                self.open_input(input, &text);
+                self.warn("the editor exited with an error · your text is in the box, enter saves it");
+            }
+            Edited::Errored(_) => {}
+        }
+    }
+
     fn add_draft(&mut self, draft: Draft) -> Vec<Action> {
         let Some(key) = self.open.as_ref().map(|o| o.key.clone()) else { return vec![] };
         let draft = draft.with_local_id(self.new_local_id());
@@ -168,7 +196,12 @@ impl App {
         let Some(index) = open.review.drafts.iter().position(|d| d.is(id)) else { return vec![] };
         let draft = &open.review.drafts[index];
         let changed = draft.clone().with_body(text);
-        let update = draft.id.map(|id| Action::UpdateDraft { key: open.key.clone(), id, draft: Box::new(changed.clone()) });
+        let update = draft.id.map(|id| Action::UpdateDraft {
+            key: open.key.clone(),
+            id,
+            draft: Box::new(changed.clone()),
+            held: Box::new(draft.clone()),
+        });
         self.update_open(|open| open.with_draft_replaced(index, changed));
         self.rest_on_draft(index);
         update.into_iter().collect()

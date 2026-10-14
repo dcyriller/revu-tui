@@ -68,7 +68,8 @@ impl App {
                 let follow = self.apply_draft_saved(&key, &draft, id, &body);
                 self.composed.extend(follow);
             }
-            Incoming::Published { key, approved, count } => self.apply_published(&key, approved, count),
+            Incoming::DraftChanged { key } => self.draft_write_answered(&key),
+            Incoming::Published { key, approval, count } => self.apply_published(&key, &approval, count),
             Incoming::Posted { key, to } => self.apply_posted(&key, &to),
             Incoming::Resolved { key, thread, resolved } => self.apply_resolved(&key, &thread, resolved),
             Incoming::Checks { key, checks } => self.apply_checks(&key, checks),
@@ -99,11 +100,7 @@ impl App {
                 let follow = self.reread(&key);
                 self.composed.extend(follow);
             }
-            Incoming::Composed { input, text } => {
-                if let Some(text) = text {
-                    self.composed = self.submit(input, text);
-                }
-            }
+            Incoming::Composed { input, edited } => self.apply_composed(input, edited),
             Incoming::ViewReady { key, view } => self.apply_view_ready(&key, view),
             Incoming::Viewed { view, outcome } => self.apply_viewed(&view, outcome),
             Incoming::SessionPick { mr, sessions } => self.offer_sessions(*mr, sessions),
@@ -129,7 +126,8 @@ impl App {
 
     /// Actions an `Incoming` produced, taken by the loop right after `apply`.
     pub fn take_actions(&mut self) -> Vec<super::Action> {
-        std::mem::take(&mut self.composed)
+        let actions = std::mem::take(&mut self.composed);
+        self.sending(actions)
     }
 
     fn apply_review(&mut self, key: super::MrKey, review: Review, cached: Option<std::time::Duration>) {
@@ -138,6 +136,7 @@ impl App {
         }
         if cached.is_none() {
             self.news = self.open.as_ref().filter(|o| o.key == key).and_then(|o| news(&o.review, &review)).or(self.news.take());
+            self.drafts_read(&key);
         }
         let current = self.open.take_if(|o| o.key == key);
         let fresh_open = current.is_none();
@@ -288,7 +287,7 @@ mod tests {
         app.apply(Incoming::Checks { key: other.clone(), checks: None });
         app.apply(Incoming::Resolved { key: other.clone(), thread: "c0ffee00c0ffee00".into(), resolved: true });
         app.apply(Incoming::Approved { key: other.clone(), approve: true });
-        app.apply(Incoming::Published { key: other, approved: false, count: 1 });
+        app.apply(Incoming::Published { key: other, approval: Approval::NotAsked, count: 1 });
         assert_eq!(app.open, before);
     }
 

@@ -44,6 +44,7 @@ mod usage;
 mod view;
 mod whats_new;
 mod write;
+mod writes;
 mod zen;
 
 pub use apply::Confirm;
@@ -151,14 +152,17 @@ pub enum Action {
         draft: Box<Draft>,
     },
     /// The changed draft in full, position included, so GitLab keeps it on its line.
+    /// `held` is the draft as the forge holds it now: it goes back on screen if the forge refuses.
     UpdateDraft {
         key: MrKey,
         id: u64,
         draft: Box<Draft>,
+        held: Box<Draft>,
     },
     DeleteDraft {
         key: MrKey,
         id: u64,
+        held: Box<Draft>,
     },
     /// `⌘enter`: the text goes public at once, no draft.
     Post {
@@ -339,7 +343,21 @@ pub enum Failure {
     Open,
     Poll,
     Local,
-    Draft,
+    /// The draft is not saved; `r` posts it again.
+    Draft {
+        key: MrKey,
+    },
+    /// The forge kept the draft as `held`; `wanted` is the text it was to take.
+    DraftUpdate {
+        key: MrKey,
+        held: Box<Draft>,
+        wanted: String,
+    },
+    /// The forge kept the draft `held`.
+    DraftDelete {
+        key: MrKey,
+        held: Box<Draft>,
+    },
     Publish,
     /// The comment stayed off the forge; its text waits in the box.
     Post {
@@ -440,9 +458,13 @@ pub enum Incoming {
         id: u64,
         body: String,
     },
+    /// The forge took a draft edit or delete.
+    DraftChanged {
+        key: MrKey,
+    },
     Published {
         key: MrKey,
-        approved: bool,
+        approval: crate::forge::Approval,
         count: usize,
     },
     Posted {
@@ -525,10 +547,10 @@ pub enum Incoming {
         said: String,
         outcome: Result<(), String>,
     },
-    /// What came back from the editor; `None` when the user backed out.
+    /// What came back from the editor.
     Composed {
         input: Input,
-        text: Option<String>,
+        edited: crate::tui::compose::Edited,
     },
     /// A piece of Claude's answer `id` for the MR `key`.
     Answer {

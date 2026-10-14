@@ -74,7 +74,7 @@ async fn drafts(&self, key: &MrKey) -> Result<Vec<Draft>>
 async fn create_draft(&self, key: &MrKey, draft: &NewDraft) -> Result<Draft>
 async fn update_draft(&self, key: &MrKey, id: u64, draft: &NewDraft) -> Result<Draft>
 async fn delete_draft(&self, key: &MrKey, id: u64) -> Result<()>
-async fn publish(&self, key: &MrKey, approve: bool) -> Result<()>
+async fn publish(&self, key: &MrKey, approve: bool) -> Result<Approval>   // NotAsked, Given or Refused(reason): an Err means nothing went public
 async fn resolve(&self, key: &MrKey, discussion: &str, resolved: bool) -> Result<()>
 async fn approve(&self, key: &MrKey, approve: bool) -> Result<()>
 async fn set_draft(&self, key: &MrKey, draft: bool) -> Result<()>
@@ -94,7 +94,7 @@ async fn comment(&self, key: &MrKey, body: &str, position: Option<&Position>) ->
 | Threads | `GET …/discussions`, notes carry `position` | One GraphQL query: `reviewThreads` (side, line, range, resolved; outdated ones fall back to `originalLine`), review summaries and PR comments as unanchored threads. Thread ids are node ids (`PRRT_…`). |
 | Position out | `base_sha`, `start_sha`, `head_sha`, `old_line`/`new_line`, `line_range` with `line_code = sha1(path)_old_new` | `commit_id = refs.head`, `path`, `side = RIGHT` when `line.new` exists else `LEFT`, `line = line.number()`, `start_line`/`start_side` from `start` |
 | Drafts | `…/draft_notes` CRUD, per user, survive sessions | My pending review: `addPullRequestReview` opens it on the first draft; `addPullRequestReviewThread` (line drafts), `addPullRequestReviewThreadReply` (replies), the review body (drafts on the PR itself, appended); read back from the same `reviewThreads` query, paged to the end, where pending comments carry `state: PENDING`. Edits and deletes go by node id, looked up from the draft's database id. |
-| Publish | `POST …/draft_notes/bulk_publish`, then `/approve` when asked | `submitPullRequestReview` with `COMMENT` or `APPROVE`, in one call |
+| Publish | `POST …/draft_notes/bulk_publish`, then `/approve` when asked; a refused approval comes back as `Approval::Refused`, the drafts being out already | `submitPullRequestReview` with `COMMENT` or `APPROVE`, in one call |
 | Resolve | `PUT …/discussions/:id resolved=` | GraphQL `resolveReviewThread` / `unresolveReviewThread` |
 | Approve | `POST …/approve`, `…/unapprove` | `POST pulls/:n/reviews` with `APPROVE`; there is no unapprove for the reviewer, the error says to request changes or dismiss from the web |
 | Review apps | `GET projects/:path/environments?states=available&search=<CI_COMMIT_REF_SLUG>` (the deployments list ignores `ref`), then each environment's `last_deployment`: kept when a success from the branch or `refs/merge-requests/:iid/`, current when from the MR's newest pipeline | `GET repos/…/deployments?ref=<branch>`, the first of each environment, then its newest status: kept when `success` with an `environment_url` |
@@ -136,6 +136,7 @@ Cache paths moved from `mr/<project_id>/<iid>/` to `mr/<group+project>/<number>/
 ## What differs on GitHub (phase 2)
 
 - **Drafts on the PR itself** live in the pending review's body: several of them read back as one draft, their texts joined; saving one folds it into that draft, so an edit or a delete covers them all.
+- **One draft write at a time.** Saving reads the pending review, then writes it: two at once would each drop the other's note, or both open a review and GitHub refuses the second. The TUI backend runs the draft saves, edits, deletes and the publish of one MR one after the other (`tui::lanes`), on both forges so they behave the same.
 - **Resolve on publish** does not exist on GitHub: a draft's `resolve` flag is ignored.
 - **Moving a draft** is impossible on GitHub: an edit changes the text, the comment stays on its line (verified live).
 - **Unapprove** is refused with the way out; approving one's own PR is refused by GitHub, and the message says so.

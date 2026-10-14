@@ -3,7 +3,7 @@
 use super::wire::{self, Actor, Anchor, Label, Nodes, QueuePr, Review, ReviewRequest, user_of};
 use super::{Client, owner_and_name};
 use crate::forge::{self, Approvals, Discussion, Draft, MrKey, NewDraft, Note, Pipeline, Queue, QueueMr, Refs};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -733,17 +733,17 @@ impl Client {
 
     /// Submits my pending review, as an approval when asked; with nothing pending, an approval
     /// alone is still a review.
-    pub async fn publish(&self, key: &MrKey, approve: bool) -> Result<()> {
+    pub async fn publish(&self, key: &MrKey, approve: bool) -> Result<forge::Approval> {
         let prs = self.threads(key).await?;
         let event = if approve { "APPROVE" } else { "COMMENT" };
-        match prs.pending_review() {
-            Some(review) => {
-                let query = "mutation($id: ID!, $event: PullRequestReviewEvent!) { submitPullRequestReview(input: {pullRequestReviewId: $id, event: $event}) { clientMutationId } }";
-                self.graphql::<Value>(query, json!({"id": review.id, "event": event})).await.map(|_| ())
-            }
-            None if approve => self.approve(key, true).await,
-            None => bail!("nothing to publish: no pending review on {}#{}", key.project, key.number),
-        }
+        let Some(review) = prs.pending_review() else {
+            ensure!(approve, "nothing to publish: no pending review on {}#{}", key.project, key.number);
+            self.approve(key, true).await?;
+            return Ok(forge::Approval::Given);
+        };
+        let query = "mutation($id: ID!, $event: PullRequestReviewEvent!) { submitPullRequestReview(input: {pullRequestReviewId: $id, event: $event}) { clientMutationId } }";
+        self.graphql::<Value>(query, json!({"id": review.id, "event": event})).await?;
+        Ok(if approve { forge::Approval::Given } else { forge::Approval::NotAsked })
     }
 
     pub async fn resolve(&self, discussion: &str, resolved: bool) -> Result<()> {
@@ -1250,7 +1250,7 @@ mod tests {
         let edited = client.update_draft(&key(), 105, &NewDraft { body: "nit: unused".into(), ..NewDraft::default() }).await.unwrap();
         assert_eq!(edited.body, "nit: unused");
         client.delete_draft(&key(), 103).await.unwrap();
-        client.publish(&key(), true).await.unwrap();
+        assert_eq!(client.publish(&key(), true).await.unwrap(), forge::Approval::Given, "one review carries the notes and the approval");
         let err = client.delete_draft(&key(), 101).await.unwrap_err().to_string();
         assert!(err.contains("not in my pending review"), "{err}");
     }

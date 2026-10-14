@@ -62,6 +62,18 @@ Each entry says what changed, then where, then how to use it.
   In the queue and an open MR: a request that gets no answer gives up, the status line says offline, and polling tries again.
 - **Opening an agent session no longer waits forever.**
   On `a g` and `:session`: a stuck `git fetch`, tmux or terminal is stopped and the toast says which.
+- **A draft you deleted or edited is never published as it was.**
+  When deleting or editing a draft fails, for example while you are offline.
+  The draft comes back as the forge holds it, your new text waits in the box, and `P` waits for `r`.
+- **A comment survives an editor that exits with an error.**
+  When you write in `$EDITOR` with `E` or `ctrl-o`, and vim quits with `:cq` or after an error.
+  The text waits in the comment box, and `enter` saves it.
+- **A refused approval no longer reads as a failed publish.**
+  On GitLab, when you publish and approve with `P`, `a`, `enter`.
+  The comments are published and leave the list, and the warning says why the approval was refused.
+- **Notes saved together on a GitHub PR all reach it.**
+  On GitHub, when several drafts save at once, as `r` does after you were offline.
+  Each draft now waits for the one before it, so none overwrites another.
 
 ## 0.7.0 - 2026-10-12
 
