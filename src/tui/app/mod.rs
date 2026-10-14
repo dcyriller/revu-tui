@@ -38,6 +38,8 @@ mod test_support;
 #[cfg(test)]
 mod tests;
 mod threads;
+#[cfg(test)]
+mod timing;
 mod tree;
 mod triage;
 mod usage;
@@ -425,6 +427,13 @@ pub enum Incoming {
         key: MrKey,
         review: Box<Review>,
         cached: Option<Duration>,
+    },
+    /// Opening found the painted head still current: the MR, its threads and drafts are fresh, the diff stays.
+    Threads {
+        key: MrKey,
+        mr: Box<crate::forge::Mr>,
+        discussions: Vec<Discussion>,
+        drafts: Vec<Draft>,
     },
     /// The MR read again at the head already shown: title, state, approvals and the like, the diff unchanged.
     Mr {
