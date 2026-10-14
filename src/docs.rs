@@ -319,6 +319,54 @@ pub const SETTINGS: &[Setting] = &[
         example: "\"claude-opus-5\"",
     },
     Setting {
+        table: "agent",
+        key: "enabled",
+        kind: "true or false",
+        default: "`false`",
+        meaning: "`a g` opens a coding-agent session that belongs to the MR: Claude Code, unless `start` is set.",
+        example: "true",
+    },
+    Setting {
+        table: "agent",
+        key: "start",
+        kind: "command line with placeholders",
+        default: "none: Claude Code",
+        meaning: "Another agent: the command that starts its session, run in a worktree on the MR's branch.",
+        example: "\"aider --message 'Review {ref}: {title}'\"",
+    },
+    Setting {
+        table: "agent",
+        key: "open",
+        kind: "command line with placeholders",
+        default: "`start` runs again",
+        meaning: "With `start`: the command that opens the session of an MR again.",
+        example: "\"aider --restore\"",
+    },
+    Setting {
+        table: "agent",
+        key: "show",
+        kind: "`auto`, `split` or `window`",
+        default: "`auto`",
+        meaning: "`auto` opens the session in a pane beside revu when half of revu's width is `compact_width` or more; `split` always does; `window` never does. Not beside means a tmux window, or the terminal itself outside tmux.",
+        example: "\"auto\"",
+    },
+    Setting {
+        table: "agent",
+        key: "split",
+        kind: "command line with placeholders",
+        default: "none",
+        meaning: "For a terminal other than tmux, Ghostty, iTerm2 and WezTerm: the command that opens a pane beside revu; `{command}` becomes the session's program and `{dir}` its folder.",
+        example: "\"kitty @ launch --location=vsplit --cwd {dir} {command}\"",
+    },
+    Setting {
+        table: "agent.checkouts",
+        key: "<project>",
+        kind: "folder",
+        default: "the checkout revu was started in",
+        meaning: "Where a project is checked out on this machine: a full path, or one from `~/`.",
+        example: "\"~/code/widgets\"",
+    },
+    Setting {
         table: "hosts.\"<host>\"",
         key: "forge",
         kind: "`gitlab` or `github`",
@@ -444,6 +492,7 @@ pub fn example_toml() -> String {
             "<name>" => "mine",
             "<glob>" => "\"*.md\"",
             "<action>" => "next_thread",
+            "<project>" => "\"acme/widgets\"",
             key => key,
         };
         lines.push(format!("{key} = {}", setting.example));
@@ -557,8 +606,9 @@ mod tests {
             ("Open", "open"),
             ("Share", "share"),
             ("ShareTarget", "share.targets.<name>"),
+            ("Agent", "agent"),
         ];
-        let nested = ["queue", "review", "tui", "ai", "open", "notify", "keys", "hosts", "share", "usage"];
+        let nested = ["queue", "review", "tui", "ai", "open", "notify", "keys", "hosts", "share", "usage", "agent"];
         for (name, table) in tables {
             let start = source.find(&format!("pub struct {name} {{")).unwrap_or_else(|| panic!("struct {name}"));
             let body = &source[start..start + source[start..].find("\n}").unwrap()];
