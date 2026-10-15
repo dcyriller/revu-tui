@@ -37,10 +37,12 @@ mod whats_new_view;
 use crate::ai;
 use crate::ai::anthropic::Claude;
 use crate::ai::typesafe::TypeSafe;
+use crate::blocking;
 use crate::cache::Cache;
 use crate::ctx::Ctx;
+use crate::log::OrWarn as _;
 use actions::{failed, spawn};
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use app::{Action, App, Failure, Incoming, Input, Settings};
 use backend::Backend;
 use chrono::Utc;
@@ -215,10 +217,8 @@ fn whats_new(cache: &Cache, changelog: crate::changelog::Changelog) -> app::What
     let key = crate::cache::keys::news();
     let seen = cache.read::<String>(&key).and_then(|position| position.parse().ok()).unwrap_or_else(|| changelog.previous());
     let here = changelog.position();
-    if seen != here
-        && let Err(err) = cache.write(&key, &here.to_string())
-    {
-        tracing::warn!("remembering the changelog position failed: {err}");
+    if seen != here {
+        cache.write(&key, &here.to_string()).or_warn("remembering the changelog position");
     }
     app::WhatsNew { changelog, seen }
 }
@@ -249,7 +249,7 @@ const USAGE_FLUSH: Duration = Duration::from_secs(60);
 /// Adds `counts` to today's line of the usage file; a failure costs a minute of counts, nothing else.
 async fn save_usage(counts: crate::usage::Counts) {
     let today = chrono::Local::now().date_naive();
-    let _ = blocking(move || crate::usage::record(&Cache::shared(), today, &counts)).await;
+    blocking::run(move || crate::usage::record(&Cache::shared(), today, &counts)).await.or_warn("saving the usage counts");
 }
 
 /// The reader's program owns the terminal until it exits; the app, untouched, draws again after.
@@ -349,7 +349,7 @@ fn print_links(links: &[Hyperlink]) {
     use std::io::Write;
     let mut out = std::io::stdout();
     for Hyperlink { link, fg, bg } in links {
-        let _ = queue!(
+        queue!(
             out,
             cursor::SavePosition,
             cursor::MoveTo(link.x, link.y),
@@ -358,9 +358,10 @@ fn print_links(links: &[Hyperlink]) {
             style::Print(format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", link.url, link.text)),
             style::ResetColor,
             cursor::RestorePosition,
-        );
+        )
+        .or_warn("drawing a link");
     }
-    let _ = out.flush();
+    out.flush().or_warn("drawing the links");
 }
 
 /// Jev, only when the config switches it on and a key is found; the environment can still switch it off.
@@ -369,8 +370,12 @@ fn jev(ai: &crate::config::Ai) -> Option<TypeSafe> {
         return None;
     }
     let keychain = crate::auth::SecurityCli::new(crate::auth::SERVICE);
-    let (key, _) = ai::key(ai::Provider::Typesafe, &ai::KeyEnv::from_process(), &keychain).ok().flatten()?;
-    TypeSafe::connect(&key).ok()
+    if let Some(reason) = crate::ai::typesafe::disabled_reason() {
+        tracing::info!("Jev is off: {reason}");
+        return None;
+    }
+    let (key, _) = ai_key(ai::Provider::Typesafe, &keychain)?;
+    TypeSafe::connect(&key).inspect_err(|e| tracing::warn!("Jev is off: {e}")).ok()
 }
 
 /// Claude, only when the config switches it on and a key is found.
@@ -379,8 +384,14 @@ fn claude(ai: &crate::config::Ai) -> Option<Claude> {
         return None;
     }
     let keychain = crate::auth::SecurityCli::new(crate::auth::SERVICE);
-    let (key, _) = ai::key(ai::Provider::Anthropic, &ai::KeyEnv::from_process(), &keychain).ok().flatten()?;
-    Some(Claude::new(key, ai.anthropic.model()))
+    let (key, _) = ai_key(ai::Provider::Anthropic, &keychain)?;
+    Claude::new(key, ai.anthropic.model()).inspect_err(|e| tracing::warn!("Claude is off: {e:#}")).ok()
+}
+
+/// A keychain that cannot be read leaves the provider off, with the reason in the log.
+fn ai_key(provider: ai::Provider, keychain: &crate::auth::SecurityCli) -> Option<(ai::Secret, ai::KeySource)> {
+    let found = ai::key(provider, &ai::KeyEnv::from_process(), keychain);
+    found.inspect_err(|e| tracing::warn!("reading the {provider} key failed: {e:#}")).ok().flatten()
 }
 
 /// The agent of `[agent]`, when it is switched on, with what this machine says: the home folder, Claude
@@ -399,11 +410,6 @@ fn agent(config: &crate::config::Agent, compact_width: u16, checkout: Option<&cr
         started_in: checkout.map(|checkout| (checkout.project.clone(), checkout.root.clone())),
     };
     Some(crate::agent::Agent::new(config, machine, std::sync::Arc::new(crate::agent::Programs)))
-}
-
-/// Runs `work` on tokio's blocking pool: file I/O and CPU-heavy work stay off the threads that drive the network.
-async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
-    tokio::task::spawn_blocking(work).await.context("a background task stopped")?
 }
 
 #[cfg(test)]

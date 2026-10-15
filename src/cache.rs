@@ -121,15 +121,11 @@ impl Cache {
         }
     }
 
-    /// A missing or unreadable file is a miss; an unreadable one is removed so it cannot fail again.
+    /// A missing or unreadable file is a miss; an unreadable one is logged and removed so it cannot fail again.
     pub fn read<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
         let path = self.dir.join(key);
         let raw = std::fs::read(&path).ok()?;
-        let parsed = serde_json::from_slice(&raw).ok();
-        if parsed.is_none() {
-            let _ = std::fs::remove_file(&path);
-        }
-        parsed
+        serde_json::from_slice(&raw).inspect_err(|e| drop_unreadable(&path, e)).ok()
     }
 
     pub fn write<T: Serialize + ?Sized>(&self, key: &str, value: &T) -> Result<()> {
@@ -161,13 +157,7 @@ impl Cache {
 
     pub fn write_bytes(&self, key: &str, bytes: &[u8]) -> Result<()> {
         let path = self.dir.join(key);
-        let parent = path.parent().context("cache key has no parent")?;
-        create_private_dirs(&self.dir, parent)?;
-        let temp = tempfile::Builder::new().prefix(".tmp-").tempfile_in(parent).context("creating a temp file")?;
-        std::fs::set_permissions(temp.path(), private(FILE_MODE))?;
-        std::fs::write(temp.path(), bytes)?;
-        temp.persist(&path).with_context(|| format!("writing {}", path.display()))?;
-        Ok(())
+        write_private(&self.dir, &path, bytes).with_context(|| format!("writing {}", path.display()))
     }
 
     pub fn read_entry<T: DeserializeOwned>(&self, key: &str) -> Option<Entry<T>> {
@@ -198,6 +188,27 @@ impl Cache {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e).with_context(|| format!("removing {}", self.dir.display())),
         }
+    }
+}
+
+/// Through a private temp file then a rename, so a reader never sees half a file.
+fn write_private(root: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().context("cache key has no parent")?;
+    create_private_dirs(root, parent)?;
+    let temp = tempfile::Builder::new().prefix(".tmp-").tempfile_in(parent).context("creating a temp file")?;
+    std::fs::set_permissions(temp.path(), private(FILE_MODE))?;
+    std::fs::write(temp.path(), bytes)?;
+    temp.persist(path)?;
+    Ok(())
+}
+
+/// A file already gone is fine; one that stays is logged, since it will be read and removed again.
+fn drop_unreadable(path: &Path, error: &serde_json::Error) {
+    tracing::warn!("dropping unreadable cache file {}: {error}", path.display());
+    if let Err(e) = std::fs::remove_file(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("removing the broken cache file {} failed: {e}", path.display());
     }
 }
 
@@ -436,6 +447,18 @@ mod tests {
         std::fs::write(&path, b"{nope").unwrap();
         assert_eq!(cache.read::<Vec<u32>>(&keys::queue(None)), None);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_corrupt_file_dropped_leaves_its_path_in_the_log() {
+        crate::log::capture::start();
+        let (dir, cache) = cache();
+        let path = dir.path().join("gitlab.com").join(keys::queue(None));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{nope").unwrap();
+        assert_eq!(cache.read::<Vec<u32>>(&keys::queue(None)), None);
+        let text = crate::log::capture::text();
+        assert!(text.contains("WARN") && text.contains(&format!("dropping unreadable cache file {}", path.display())), "{text}");
     }
 
     #[cfg(unix)]

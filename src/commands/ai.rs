@@ -6,6 +6,7 @@ use crate::cli::{AiArgs, AiAskArgs, AiCommand, AiLoginArgs};
 use crate::commands::{show, target};
 use crate::config::Config;
 use crate::ctx::Ctx;
+use crate::log::OrWarn as _;
 use crate::render::{Style, Theme};
 use crate::review::Review;
 use anyhow::{Context, Result, bail};
@@ -40,8 +41,7 @@ pub async fn ask(ctx: &Ctx, args: AiArgs) -> Result<()> {
     let outcome = claude
         .stream(&request, |event| match event {
             anthropic::Event::Text(text) => {
-                let _ = out.write_all(text.as_bytes());
-                let _ = out.flush();
+                out.write_all(text.as_bytes()).and_then(|()| out.flush()).or_warn("printing the answer");
             }
             anthropic::Event::Restart => eprintln!("\n(the first model declined; another one answers from the start)"),
         })
@@ -58,7 +58,7 @@ fn claude(ai: &crate::config::Ai) -> Result<anthropic::Claude> {
     }
     let (key, _) = ai::key(Provider::Anthropic, &KeyEnv::from_process(), &SecurityCli::new(auth::SERVICE))?
         .context("no Anthropic key: run `revu ai login anthropic` or set ANTHROPIC_API_KEY")?;
-    Ok(anthropic::Claude::new(key, ai.anthropic.model()))
+    anthropic::Claude::new(key, ai.anthropic.model())
 }
 
 /// The scope and the question the arguments name: a summary or an explanation when no question is typed.
