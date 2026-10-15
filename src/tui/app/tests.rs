@@ -40,7 +40,7 @@ fn snapshot_review_open() {
 #[test]
 fn snapshot_thread_open() {
     let mut app = with_review();
-    press(&mut app, "]N");
+    walk_to_any_thread(&mut app, true);
     app.handle_key(code(KeyCode::Enter));
     insta::assert_snapshot!("thread_open", render(&mut app, 120, 24));
 }
@@ -110,7 +110,7 @@ fn snapshot_publish_modal() {
 #[test]
 fn snapshot_thread_with_a_draft_reply() {
     let mut app = with_review();
-    press(&mut app, "]N");
+    walk_to_any_thread(&mut app, true);
     app.handle_key(code(KeyCode::Enter));
     press(&mut app, "r");
     let save = type_text(&mut app, "agreed, keys are per card");
@@ -274,10 +274,6 @@ fn snapshot_palette_in_each_mode() {
     app.handle_key(ctrl_k());
     press(&mut app, "@omar");
     insta::assert_snapshot!("palette_mrs", render(&mut app, 100, 24));
-    app.handle_key(code(KeyCode::Esc));
-    app.handle_key(ctrl_k());
-    press(&mut app, "/ch");
-    insta::assert_snapshot!("palette_files", render(&mut app, 100, 24));
 }
 
 #[test]
@@ -301,7 +297,7 @@ fn snapshot_narrow_pane_and_a_three_line_box() {
     app.handle_key(code(KeyCode::Enter));
     insta::assert_snapshot!("pane_narrow", render(&mut app, 100, 20));
     let mut app = with_review();
-    press(&mut app, "]N");
+    walk_to_any_thread(&mut app, true);
     press(&mut app, "lr");
     press(&mut app, "agreed");
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
@@ -315,7 +311,8 @@ fn snapshot_narrow_pane_and_a_three_line_box() {
 fn snapshot_answer_pane() {
     let mut app = asking();
     on_line(&mut app);
-    let (id, ..) = the_ask(&press(&mut app, "ae"));
+    press(&mut app, "aa");
+    let (id, ..) = the_ask(&type_text(&mut app, "what does it do?"));
     let text = "It swaps the client for one keyed by the card, so a retry **reuses** the idempotency key.\n\n- `charge` now takes the key\n- nothing else moves";
     app.apply(Incoming::Answer {
         key: mr_key(),
@@ -441,15 +438,6 @@ fn snapshot_queue_compact() {
     app.queue_layout = crate::config::QueueLayout::Compact;
     app.now = app.started;
     insta::assert_snapshot!("queue_compact", render(&mut app, 100, 16));
-}
-
-#[test]
-fn snapshot_queue_drafts_open_and_grouped_by_author() {
-    let mut app = scoped_app();
-    app.apply(queue_answer(Some("acme/widgets"), scoped_sections(), false));
-    press(&mut app, "Gkzo");
-    press(&mut app, "S");
-    insta::assert_snapshot!("queue_drafts_grouped", render(&mut app, 120, 24));
 }
 
 #[test]
@@ -642,7 +630,7 @@ fn a_drag_in_the_diff_copies_only_the_code_text_and_lights_it() {
 #[test]
 fn a_drag_in_the_thread_pane_copies_the_note_as_written_without_its_header() {
     let mut app = with_review();
-    press(&mut app, "]N");
+    walk_to_any_thread(&mut app, true);
     app.handle_key(code(KeyCode::Enter));
     let open = app.open.as_mut().unwrap();
     let mut threads = open.review.threads.to_vec();
@@ -666,7 +654,8 @@ fn in_a_short_zen_column_enter_in_every_thread_shows_the_diff_and_l_or_t_bring_t
     assert_eq!((listed_place(&app), app.focus), (Some(Place::All), Focus::Side));
     let list = render(&mut app, 138, 24);
     assert!(list.contains("the whole MR · 3 threads") && !list.contains("@@ -12,4"), "the list takes the diff's column:\n{list}");
-    press(&mut app, "JJ");
+    walk_to_thread(&mut app, true);
+    walk_to_thread(&mut app, true);
     app.handle_key(code(KeyCode::Enter));
     let open = app.open.as_ref().unwrap();
     assert_eq!(open.row().and_then(|row| open.review.place_of(row)), Some(Place::Line { file: 0, new: None, old: Some(13) }));
@@ -715,9 +704,7 @@ fn a_peek_badges_the_first_header_row_in_every_layout_and_leaves_the_pipeline_li
     assert!(cell.modifier.contains(ratatui::style::Modifier::BOLD));
     press(&mut app, ">>");
     assert!(first_row(&mut app).contains(" AFTER "), "{}", first_row(&mut app));
-    press(&mut app, "zh");
-    assert!(first_row(&mut app).contains(" AFTER "), "folded: {}", first_row(&mut app));
-    press(&mut app, "zhzz");
+    press(&mut app, "zz");
     assert!(first_row(&mut app).contains(" AFTER "), "zen: {}", first_row(&mut app));
 }
 

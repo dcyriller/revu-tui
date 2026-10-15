@@ -1,4 +1,3 @@
-use super::pane::Threads;
 use super::{Action, App, Focus};
 use crate::act::{self, Act, Pane};
 use crate::review::Row;
@@ -57,7 +56,7 @@ impl App {
             return self.through_keymap(key, Self::handle_brief_key);
         }
         if self.news_page.is_some() {
-            return self.handle_news_page_key(paged(key));
+            return self.through_keymap(key, Self::handle_news_page_key);
         }
         if self.filtering {
             return self.handle_filter_key(key);
@@ -241,7 +240,6 @@ impl App {
                     self.did_nothing();
                 }
             }
-            Act::GroupByAuthor => return self.group_queue(),
             Act::Pin => return self.toggle_pin(),
             Act::Description => self.open_brief_from_queue(),
             Act::Open => return self.open_selected(),
@@ -375,7 +373,7 @@ impl App {
     /// `n` and `N` with no search live: `]n` and `[n`, counted as them.
     fn jump_to_thread(&mut self, forward: bool) -> Vec<Action> {
         self.key_did = Some(if forward { Act::NextThread } else { Act::PrevThread });
-        self.jump_to_marked(forward, Threads::Open)
+        self.jump_to_marked(forward)
     }
 
     /// A refresh also posts again every draft GitLab does not hold yet.
@@ -390,6 +388,9 @@ impl App {
     /// questions, the outline's and the prose's folds, then the diff's.
     fn handle_prefixed(&mut self, prefix: char, key: KeyEvent) -> Vec<Action> {
         let KeyCode::Char(c) = key.code else { return vec![] };
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return vec![];
+        }
         if prefix == '\'' {
             self.did(Act::Views);
             self.apply_view(c);
@@ -422,7 +423,6 @@ impl App {
     fn queue_prefixed(&mut self, act: Act) -> Vec<Action> {
         self.did(act);
         let open = match act {
-            Act::NextReview | Act::PrevReview => return self.walk_reviews(act == Act::NextReview),
             Act::NextMr | Act::PrevMr => return self.step_mr(act == Act::NextMr),
             Act::FoldOpen => Some(true),
             Act::FoldClose => Some(false),
@@ -445,20 +445,11 @@ impl App {
             Act::FoldToggle => return self.fold_at_cursor(None),
             Act::FoldOpen => return self.fold_at_cursor(Some(true)),
             Act::FoldClose => return self.fold_at_cursor(Some(false)),
-            Act::FoldHeader => self.header_folded = !self.header_folded,
             Act::Zen => return self.toggle_zen(),
             Act::Viewed => return self.toggle_viewed(),
-            Act::FoldAll => return self.fold_all(true),
-            Act::UnfoldAll => return self.fold_all(false),
-            Act::NextReview | Act::PrevReview => return self.walk_reviews(act == Act::NextReview),
             Act::NextMr | Act::PrevMr => return self.step_mr(act == Act::NextMr),
             Act::NextHunk | Act::PrevHunk => self.review_jump(act == Act::NextHunk, |r| matches!(r, Row::Hunk { .. })),
-            Act::NextThread | Act::PrevThread => return self.jump_to_marked(act == Act::NextThread, Threads::Open),
-            Act::NextAnyThread | Act::PrevAnyThread => return self.jump_to_marked(act == Act::NextAnyThread, Threads::Every),
-            Act::NextFileUnresolved | Act::PrevFileUnresolved => {
-                let wanted = self.files_with_unresolved();
-                self.review_jump(act == Act::NextFileUnresolved, move |r| matches!(r, Row::File { index, .. } if wanted.contains(index)));
-            }
+            Act::NextThread | Act::PrevThread => return self.jump_to_marked(act == Act::NextThread),
             _ => self.did_nothing(),
         }
         vec![]
@@ -572,14 +563,32 @@ mod tests {
     use ratatui::layout::Rect;
 
     #[test]
-    fn zh_folds_the_review_header_to_one_row() {
+    fn the_removed_keys_do_nothing() {
+        let mut queue = with_queue();
+        let rows = queue.queue_rows().len();
+        assert_eq!(press(&mut queue, "S"), vec![]);
+        assert_eq!((queue.queue_rows().len(), queue.queue_view_label()), (rows, None), "no grouping by author");
+        for keys in ["zh", "zM", "zR", "]N", "[N", "]f", "[f", "]r", "[r", "ae", "ar", "as", "at", "ac"] {
+            let mut app = with_review();
+            let before = (app.open.as_ref().unwrap().selected, app.open.as_ref().unwrap().review.fold.clone());
+            assert_eq!(press(&mut app, keys), vec![], "{keys}");
+            let after = (app.open.as_ref().unwrap().selected, app.open.as_ref().unwrap().review.fold.clone());
+            assert_eq!(after, before, "{keys} leaves the diff as it was");
+        }
+        let mut pane = with_review();
+        press(&mut pane, "T");
+        let note = pane.open.as_ref().unwrap().pane.as_ref().unwrap().note;
+        press(&mut pane, "JK");
+        assert_eq!(pane.open.as_ref().unwrap().pane.as_ref().unwrap().note, note, "no thread jumps in the pane");
+    }
+
+    #[test]
+    fn the_second_key_of_two_with_ctrl_does_nothing() {
         let mut app = with_review();
-        press(&mut app, "zh");
-        assert!(app.header_folded);
-        let screen = render(&mut app, 120, 24);
-        assert!(screen.contains("▸ "), "{screen}");
-        press(&mut app, "zh");
-        assert!(!app.header_folded);
+        press(&mut app, "z");
+        assert_eq!(app.handle_key(ctrl('a')), vec![], "`z` then `^a` is not `za`");
+        assert!(app.open.as_ref().unwrap().review.fold.file_is_open("src/pay/charge.rs"));
+        assert_eq!(app.pending, None, "the prefix is spent");
     }
 
     #[test]
@@ -646,7 +655,7 @@ mod tests {
         press(&mut diff, "?");
         assert_eq!(help_titles(&mut diff), ["move", "view", "comment & publish", "ask claude", "search & app"]);
         let mut thread = with_review();
-        press(&mut thread, "]N");
+        walk_to_any_thread(&mut thread, true);
         thread.handle_key(code(KeyCode::Enter));
         assert_eq!(thread.focus, Focus::Side);
         press(&mut thread, "?");
@@ -685,12 +694,8 @@ mod tests {
         let mut app = with_keys(r#"layout = "azerty""#);
         press(&mut app, ")c)c)n");
         assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::Header), "`)c` twice then `)n`, as `]c]c]n` would");
-        press(&mut app, ")N");
-        assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::Line { file: 0, hunk: 0, index: 1 }), "`)N` stops on the resolved thread");
-        press(&mut app, "(N");
-        assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::Header), "`(N` goes back");
-        press(&mut app, "]N");
-        assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::Line { file: 0, hunk: 0, index: 1 }), "brackets keep working");
+        press(&mut app, "]c");
+        assert!(matches!(app.open.as_ref().unwrap().row(), Some(Row::Hunk { index: 0, .. })), "brackets keep working");
     }
 
     #[test]
@@ -732,20 +737,20 @@ mod tests {
 
     #[test]
     fn a_bound_key_does_what_its_action_does_and_a_two_key_one_waits() {
-        let mut app = with_keys(r#"bind = { next_hunk = "F", next_any_thread = ["ft", "ctrl-e"] }"#);
+        let mut app = with_keys(r#"bind = { next_hunk = "F", next_file = ["ft", "ctrl-e"] }"#);
+        let mut tabbed = with_review();
         press(&mut app, "F");
+        press(&mut tabbed, "]c");
         assert!(matches!(app.open.as_ref().unwrap().row(), Some(Row::Hunk { index: 0, .. })));
         press(&mut app, "f");
         assert!(app.held.is_some(), "`f` waits for its second key");
         press(&mut app, "t");
         assert!(app.held.is_none());
-        assert_eq!(
-            app.open.as_ref().unwrap().row(),
-            Some(&Row::Line { file: 0, hunk: 0, index: 1 }),
-            "`ft` is `]N`: the marked line after the hunk"
-        );
+        tabbed.handle_key(code(KeyCode::Tab));
+        assert_eq!(app.open.as_ref().unwrap().row(), tabbed.open.as_ref().unwrap().row(), "`ft` is `tab`");
         app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
-        assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::Header), "`ctrl-e` is `]N` too, and wraps to the MR's thread");
+        tabbed.handle_key(code(KeyCode::Tab));
+        assert_eq!(app.open.as_ref().unwrap().row(), tabbed.open.as_ref().unwrap().row(), "`ctrl-e` is `tab` too");
     }
 
     #[test]

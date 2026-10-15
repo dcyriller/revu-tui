@@ -130,14 +130,11 @@ mod tests {
     }
 
     #[test]
-    fn pinning_and_grouping_by_author_still_shape_the_page() {
+    fn pinning_still_shapes_the_page() {
         let mut app = with_queue();
         press(&mut app, "b");
         let pinned = phone(&mut app);
         assert!(pinned.contains("PINNED · 1") && pinned.contains("TO REVIEW · 0"), "{pinned}");
-        press(&mut app, "S");
-        let grouped = phone(&mut app);
-        assert!(grouped.contains("grouped by author") && grouped.contains("PINNED · 1"), "{grouped}");
     }
 
     #[test]
@@ -260,7 +257,7 @@ mod tests {
     #[test]
     fn the_threads_of_a_line_read_in_the_diff_under_it() {
         let mut app = with_review();
-        press(&mut app, "]N");
+        walk_to_any_thread(&mut app, true);
         let screen = phone(&mut app);
         assert!(app.open.as_ref().unwrap().review.reads_threads_in_diff());
         assert!(screen.contains("│ ✓ resolved · you"), "{screen}");

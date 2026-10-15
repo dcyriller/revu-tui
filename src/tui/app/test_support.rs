@@ -597,3 +597,39 @@ pub(super) fn spot(app: &mut App, text: &str, width: u16, height: u16) -> (u16, 
     let (x, y) = found.unwrap_or_else(|| panic!("{text} is on screen:\n{screen}"));
     (x as u16, y as u16)
 }
+
+/// Every file of the open MR folded, or every one open, as a reader would leave them one by one.
+pub(super) fn fold_every_file(app: &mut App, fold: crate::diff::fold::Fold) {
+    let paths: Vec<String> = app.open.as_ref().unwrap().review.files.iter().map(|f| f.new_path.clone()).collect();
+    for path in paths {
+        app.set_file_fold(&path, fold);
+    }
+}
+
+/// The pane's cursor moved note by note onto the next thread, or the one before, as `j` and `k` walk it.
+pub(super) fn walk_to_thread(app: &mut App, forward: bool) {
+    let from = focused_thread(app);
+    for _ in 0..50 {
+        press(app, if forward { "j" } else { "k" });
+        if focused_thread(app) != from {
+            return;
+        }
+    }
+}
+
+/// The diff's cursor moved row by row onto the next line with a thread, resolved ones too, or the one before;
+/// past the last row it goes on from the first, so the MR's own thread on the header comes next.
+pub(super) fn walk_to_any_thread(app: &mut App, forward: bool) {
+    let rows = app.open.as_ref().unwrap().rows.len();
+    for _ in 0..rows {
+        let before = app.open.as_ref().unwrap().selected;
+        press(app, if forward { "j" } else { "k" });
+        if app.open.as_ref().unwrap().selected == before {
+            press(app, if forward { "g" } else { "G" });
+        }
+        let open = app.open.as_ref().unwrap();
+        if open.row().is_some_and(|row| !matches!(row, Row::Thread { .. }) && open.is_marked(row)) {
+            return;
+        }
+    }
+}

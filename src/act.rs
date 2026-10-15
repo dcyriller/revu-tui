@@ -9,14 +9,8 @@ use std::sync::LazyLock;
 pub enum Act {
     NextThread,
     PrevThread,
-    NextAnyThread,
-    PrevAnyThread,
     NextHunk,
     PrevHunk,
-    NextFileUnresolved,
-    PrevFileUnresolved,
-    NextReview,
-    PrevReview,
     NextFile,
     PrevFile,
     FoldToggle,
@@ -24,7 +18,6 @@ pub enum Act {
     FoldClose,
     FoldAll,
     UnfoldAll,
-    FoldHeader,
     Viewed,
     Zen,
     PrevMr,
@@ -59,7 +52,6 @@ pub enum Act {
     CopyLink,
     Scope,
     SortQueue,
-    GroupByAuthor,
     Filter,
     Palette,
     Views,
@@ -84,18 +76,10 @@ pub enum Act {
     EditDraft,
     DeleteDraft,
     ClosePane,
-    NextInLine,
-    PrevInLine,
     OpenLink,
     CopyFirstLink,
-    AskExplain,
-    AskRisks,
-    AskSummary,
-    AskThread,
-    AskComment,
     AskFree,
     PaletteMr,
-    PaletteFile,
     GoCommand,
     OpenCommand,
     CopyCommand,
@@ -325,20 +309,8 @@ pub const ROWS: &[Row] = &[
         .panes(&[Pane::Diff])
         .section(Section::Jump),
     bound(Act::PrevThread, "prev_thread", &["[n", "N"]).panes(&[Pane::Diff]).section(Section::Jump),
-    bound(Act::NextAnyThread, "next_any_thread", &["]N"])
-        .help(&[line(Group::Move, "]N [N", "next, previous conversation, resolved too")])
-        .section(Section::Jump),
-    bound(Act::PrevAnyThread, "prev_any_thread", &["[N"]).section(Section::Jump),
     bound(Act::NextHunk, "next_hunk", &["]c"]).help(&[line(Group::Move, "]c [c", "next, previous hunk")]).section(Section::Jump),
     bound(Act::PrevHunk, "prev_hunk", &["[c"]).section(Section::Jump),
-    bound(Act::NextFileUnresolved, "next_file_unresolved", &["]f"])
-        .help(&[line(Group::Move, "]f [f", "next, previous file with a thread")])
-        .section(Section::Jump),
-    bound(Act::PrevFileUnresolved, "prev_file_unresolved", &["[f"]).section(Section::Jump),
-    bound(Act::NextReview, "next_review", &["]r"])
-        .help(&[line(Group::Move, "]r [r", "next, previous MR that needs you")])
-        .section(Section::Jump),
-    bound(Act::PrevReview, "prev_review", &["[r"]).section(Section::Jump),
     bound(Act::NextFile, "next_file", &["tab"])
         .help(&[line(Group::Move, "tab S-tab", "next, previous file")])
         .panes(&[Pane::Diff])
@@ -354,9 +326,10 @@ pub const ROWS: &[Row] = &[
         ])
         .section(Section::View),
     bound(Act::FoldClose, "fold_close", &["zc"]).section(Section::View),
-    bound(Act::FoldAll, "fold_all", &["zM"]).help(&[line(Group::View, "zM zR", "fold, unfold every file")]).section(Section::View),
+    bound(Act::FoldAll, "fold_all", &["zM"])
+        .help(&[line(Group::View, "zR zM", "in prose: show, fold the unchanged blocks")])
+        .section(Section::View),
     bound(Act::UnfoldAll, "unfold_all", &["zR"]).section(Section::View),
-    bound(Act::FoldHeader, "fold_header", &["zh"]).help(&[line(Group::View, "zh", "fold the MR header")]).section(Section::View),
     bound(Act::Viewed, "viewed", &["zv"]).help(&[line(Group::View, "zv", "file viewed: it folds away")]).section(Section::View),
     bound(Act::Zen, "zen", &["zz"]).help(&[line(Group::View, "zz", "zen: the diff alone, quiet")]).section(Section::View),
     bound(Act::PrevMr, "prev_mr", &["[m"]).section(Section::Jump),
@@ -459,10 +432,6 @@ pub const ROWS: &[Row] = &[
         .help(&[line(Group::Queue, "s", "next sort order")])
         .panes(&[Pane::Queue])
         .section(Section::Queue),
-    bound(Act::GroupByAuthor, "group_by_author", &["S"])
-        .help(&[line(Group::Queue, "S", "group by author")])
-        .panes(&[Pane::Queue])
-        .section(Section::Queue),
     bound(Act::Filter, "filter", &["/"])
         .help(&[line(Group::Queue, "/", "filter: words @author !42 ~label")])
         .panes(&[Pane::Queue])
@@ -476,7 +445,7 @@ pub const ROWS: &[Row] = &[
         .panes(&[Pane::Queue])
         .section(Section::Queue),
     bound(Act::Jump, "jump", &["ctrl-k", ","])
-        .help(&[line(Group::App, "^k ,", "MRs · / files · > commands")])
+        .help(&[line(Group::App, "^k ,", "MRs · > commands")])
         .panes(&[Pane::Anywhere])
         .section(Section::App),
     bound(Act::Help, "help", &["?"]).help(&[line(Group::App, "?", "this help")]).panes(&[Pane::Anywhere]).section(Section::App),
@@ -537,24 +506,13 @@ pub const ROWS: &[Row] = &[
         .help(&[line(Group::Move, "esc x", "close the pane, back to the queue")])
         .panes(&[Pane::Diff, Pane::Threads, Pane::Tree, Pane::Outline, Pane::Pipeline, Pane::Answer, Pane::Prose])
         .section(Section::Thread),
-    listed(Act::NextInLine, "next_in_line", &["J"])
-        .help(&[line(Group::Thread, "J K", "next, previous thread")])
-        .panes(&[Pane::Threads])
-        .section(Section::Thread),
-    listed(Act::PrevInLine, "prev_in_line", &["K"]).panes(&[Pane::Threads]).section(Section::Thread),
     listed(Act::OpenLink, "open_link", &["u"])
         .help(&[line(Group::Thread, "u U", "open, copy the first link")])
         .panes(&[Pane::ThreadRow])
         .section(Section::Thread),
     listed(Act::CopyFirstLink, "copy_first_link", &["U"]).panes(&[Pane::ThreadRow]).section(Section::Thread),
-    listed(Act::AskExplain, "ask_explain", &["ae"]).help(&[line(Group::Ask, "a e r s", "explain, risks, summary")]).section(Section::Ask),
-    listed(Act::AskRisks, "ask_risks", &["ar"]).section(Section::Ask),
-    listed(Act::AskSummary, "ask_summary", &["as"]).section(Section::Ask),
-    listed(Act::AskThread, "ask_thread", &["at"]).help(&[line(Group::Ask, "a t c a", "thread, comment, anything")]).section(Section::Ask),
-    listed(Act::AskComment, "ask_comment", &["ac"]).section(Section::Ask),
-    listed(Act::AskFree, "ask_free", &["aa"]).section(Section::Ask),
+    listed(Act::AskFree, "ask_free", &["aa"]).help(&[line(Group::Ask, "a a", "ask anything about the cursor")]).section(Section::Ask),
     listed(Act::PaletteMr, "palette_mr", &[]).section(Section::App),
-    listed(Act::PaletteFile, "palette_file", &[]).section(Section::App),
     command!(Act::GoCommand, "go", "open an MR: :go !42 · :go acme/widgets!42"),
     command!(Act::OpenCommand, "open", "open the MR, or the line, in the browser"),
     command!(Act::CopyCommand, "copy", "copy the link of the MR, or of the line"),
@@ -629,12 +587,9 @@ impl Group {
                 Act::NextFile,
                 Act::NextHunk,
                 Act::NextThread,
-                Act::NextAnyThread,
-                Act::NextFileUnresolved,
-                Act::NextReview,
                 Act::NextMr,
             ],
-            Self::Queue => &[Act::Filter, Act::Views, Act::Scope, Act::SortQueue, Act::GroupByAuthor, Act::Pin, Act::FoldOpen],
+            Self::Queue => &[Act::Filter, Act::Views, Act::Scope, Act::SortQueue, Act::Pin, Act::FoldOpen],
             Self::View => &[
                 Act::Search,
                 Act::Description,
@@ -651,7 +606,6 @@ impl Group {
                 Act::ViewFile,
                 Act::FoldToggle,
                 Act::FoldAll,
-                Act::FoldHeader,
                 Act::Viewed,
                 Act::ViewedNext,
             ],
@@ -671,18 +625,9 @@ impl Group {
                 Act::Ready,
                 Act::Share,
             ],
-            Self::Thread => &[
-                Act::Reply,
-                Act::Resolve,
-                Act::NextInLine,
-                Act::EveryThread,
-                Act::Mine,
-                Act::EditDraft,
-                Act::ApplySuggestion,
-                Act::OpenLink,
-            ],
+            Self::Thread => &[Act::Reply, Act::Resolve, Act::EveryThread, Act::Mine, Act::EditDraft, Act::ApplySuggestion, Act::OpenLink],
             Self::Outline => &[Act::OutlineTree, Act::OutlineCalls, Act::OutlineStack, Act::OutlinePublic, Act::FoldOpen, Act::Open],
-            Self::Ask => &[Act::AskExplain, Act::AskThread, Act::AskAnswers, Act::AnswerDraft],
+            Self::Ask => &[Act::AskFree, Act::AskAnswers, Act::AnswerDraft],
             Self::App => &[Act::Jump, Act::Palette, Act::OpenBrowser, Act::Session, Act::Refresh, Act::Help, Act::Quit],
         }
     }

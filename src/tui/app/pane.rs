@@ -8,20 +8,6 @@ use std::collections::BTreeSet;
 
 const HALF_PAGE: usize = 5;
 
-/// Which conversations `]n` stops on: open ones, or every one, resolved included (`]N`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Threads {
-    Open,
-    Every,
-}
-
-impl Threads {
-    /// A line whose threads are all resolved is not open; one of my drafts keeps it open.
-    fn stops_at(self, mark: Mark) -> bool {
-        self == Self::Every || mark > Mark::Resolved
-    }
-}
-
 /// What the pane shows and where the reader is in it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pane {
@@ -210,16 +196,12 @@ impl App {
         self.update_open(|open| open.with_pane(Some(Pane::at(place))));
     }
 
-    /// `]n` `[n`, `]N` `[N`: the next conversation in file then line order, folded or not; a folded
+    /// `]n` `[n`: the next open conversation in file then line order, folded or not; a folded
     /// file or hunk on the way opens, and stays open like one opened by hand. The pane follows when open.
-    pub(super) fn jump_to_marked(&mut self, forward: bool, threads: Threads) -> Vec<Action> {
+    pub(super) fn jump_to_marked(&mut self, forward: bool) -> Vec<Action> {
         let Some(open) = &self.open else { return vec![] };
-        let Some(target) = next_marked(open, forward, threads) else {
-            let text = match threads {
-                Threads::Open => format!("no open thread · {} for every thread", self.keymap.label("]N")),
-                Threads::Every => "nothing to jump to".to_owned(),
-            };
-            self.toast(text);
+        let Some(target) = next_marked(open, forward) else {
+            self.toast(format!("no open thread · {} lists every thread", self.keymap.label("T")));
             return vec![];
         };
         self.jump_to_row(&target)
@@ -272,8 +254,6 @@ impl App {
             Act::FullPageUp => self.pane_move(-2 * HALF_PAGE as isize),
             Act::Top => self.pane_move(isize::MIN / 2),
             Act::Bottom => self.pane_move(isize::MAX / 2),
-            Act::NextInLine => self.pane_jump(true),
-            Act::PrevInLine => self.pane_jump(false),
             Act::Open if lists_every_thread => {
                 self.unfold_focused();
                 return self.jump_to_focused();
@@ -343,24 +323,6 @@ impl App {
         self.update_open(|open| open.with_pane(Some(pane)));
     }
 
-    fn pane_jump(&mut self, forward: bool) {
-        let Some(open) = &self.open else { return };
-        let Some((_, entries, Some(focused))) = self.kept.pane_view(open) else { return };
-        let Some(pane) = &open.pane else { return };
-        let target = if forward {
-            entries.iter().position(|e| e.conversation > focused.conversation)
-        } else {
-            let previous = focused.conversation.checked_sub(1);
-            previous.and_then(|c| entries.iter().position(|e| e.conversation == c))
-        };
-        let Some(note) = target else {
-            self.toast(if forward { "last thread on this line" } else { "first thread on this line" });
-            return;
-        };
-        let pane = Pane { note, ..pane.clone() };
-        self.update_open(|open| open.with_pane(Some(pane)));
-    }
-
     /// `enter` on a folded resolved thread shows all its notes, and folds it again; `false` on any other thread.
     fn unfold_focused(&mut self) -> bool {
         let Some(open) = &self.open else { return false };
@@ -418,7 +380,8 @@ fn first_link(text: &str) -> Option<String> {
 }
 
 /// The next row `threads` stops on after the cursor, wrapping, among the rows the review shows with every fold open.
-fn next_marked(open: &Open, forward: bool, threads: Threads) -> Option<Row> {
+/// A line whose threads are all resolved is not open; one of my drafts keeps it open.
+fn next_marked(open: &Open, forward: bool) -> Option<Row> {
     let every = open.review.clone().with_fold(crate::diff::fold::FoldState::default()).rows();
     let markers = open.review.markers();
     let here = open.row().and_then(|row| every.iter().position(|r| super::review::same_place(r, row))).unwrap_or(0);
@@ -426,7 +389,7 @@ fn next_marked(open: &Open, forward: bool, threads: Threads) -> Option<Row> {
     (1..=len)
         .map(|k| if forward { (here + k) % len } else { (here + len - k % len) % len })
         .filter(|&i| i != here && !matches!(every[i], Row::Thread { .. }))
-        .find(|&i| open.mark_in(&markers, &every[i]).is_some_and(|mark| threads.stops_at(mark)))
+        .find(|&i| open.mark_in(&markers, &every[i]).is_some_and(|mark| mark > Mark::Resolved))
         .map(|i| every[i].clone())
 }
 
@@ -509,7 +472,7 @@ mod tests {
         app.handle_key(code(KeyCode::Enter));
         assert!(matches!(app.open.as_ref().unwrap().row(), Some(Row::Hunk { open: false, .. })));
         app.handle_key(code(KeyCode::Enter));
-        press(&mut app, "]N");
+        walk_to_any_thread(&mut app, true);
         app.handle_key(code(KeyCode::Enter));
         assert_eq!(app.focus, Focus::Side);
         let open = app.open.as_ref().unwrap();
@@ -542,7 +505,7 @@ mod tests {
     #[test]
     fn the_pane_follows_the_cursor_onto_marked_lines_only() {
         let mut app = with_review();
-        press(&mut app, "]N");
+        walk_to_any_thread(&mut app, true);
         press(&mut app, "l");
         press(&mut app, "h");
         press(&mut app, "k");
@@ -611,9 +574,7 @@ mod tests {
     fn bracket_n_skips_resolved_threads_and_says_how_to_reach_them() {
         let mut app = with_review();
         assert_eq!(thread_stops(&mut app, "]n", 2), [Row::Header, Row::Header], "the resolved line 13 is skipped");
-        assert_eq!(app.live_toast().unwrap().text, "no open thread · ]N for every thread");
-        assert_eq!(thread_stops(&mut app, "]N", 2), [LINE_13, Row::Header], "]N stops on it and wraps");
-        assert_eq!(thread_stops(&mut app, "[N", 1), [LINE_13]);
+        assert_eq!(app.live_toast().unwrap().text, "no open thread · T lists every thread");
     }
 
     #[test]
@@ -631,13 +592,12 @@ mod tests {
         let open = app.open.clone().unwrap();
         app.open = Some(open.relaid(|review| review.with_resolved("6a9c1750b2d6e4f0", true)));
         assert_eq!(thread_stops(&mut app, "]n", 1), [LINE_13]);
-        assert_eq!(thread_stops(&mut app, "]N", 1), [Row::Header], "]N still stops there");
     }
 
     #[test]
     fn bracket_n_opens_a_folded_file_and_lands_on_its_thread() {
         let mut app = with_open_thread();
-        press(&mut app, "zM");
+        fold_every_file(&mut app, crate::diff::fold::Fold::Closed);
         assert!(!app.open.as_ref().unwrap().review.fold.file_is_open("src/pay/charge.rs"));
         press(&mut app, "g");
         let actions = press(&mut app, "]n");
@@ -645,15 +605,6 @@ mod tests {
         assert!(open.review.fold.file_is_open("src/pay/charge.rs"), "the file opened on the way");
         assert_eq!(open.row(), Some(&LINE_13));
         assert!(is_saved_fold(&actions), "the unfold is kept like one done by hand");
-    }
-
-    #[test]
-    fn bracket_big_n_opens_a_folded_file_on_the_way_to_a_resolved_thread() {
-        let mut app = with_review();
-        press(&mut app, "zMg");
-        let actions = press(&mut app, "]N");
-        assert_eq!(app.open.as_ref().unwrap().row(), Some(&LINE_13));
-        assert!(is_saved_fold(&actions));
     }
 
     #[test]
@@ -670,10 +621,12 @@ mod tests {
     #[test]
     fn bracket_n_order_is_unchanged_when_nothing_is_folded() {
         let mut open_app = with_open_thread();
-        press(&mut open_app, "zRg");
+        fold_every_file(&mut open_app, crate::diff::fold::Fold::Open);
+        press(&mut open_app, "g");
         let stops = thread_stops(&mut open_app, "]n", 4);
         let mut folded = with_open_thread();
-        press(&mut folded, "zMg");
+        fold_every_file(&mut folded, crate::diff::fold::Fold::Closed);
+        press(&mut folded, "g");
         assert_eq!(thread_stops(&mut folded, "]n", 4), stops, "folds change nothing about where ]n stops");
         assert_eq!(stops[..2], stops[2..], "it wraps around in the same order");
     }
@@ -681,7 +634,8 @@ mod tests {
     #[test]
     fn bracket_n_backwards_opens_a_fold_too() {
         let mut app = with_open_thread();
-        press(&mut app, "zMG");
+        fold_every_file(&mut app, crate::diff::fold::Fold::Closed);
+        press(&mut app, "G");
         let actions = press(&mut app, "[n");
         assert_eq!(app.open.as_ref().unwrap().row(), Some(&LINE_13));
         assert!(is_saved_fold(&actions));
@@ -690,7 +644,8 @@ mod tests {
     #[test]
     fn the_pane_keeps_its_thread_while_a_reply_is_written() {
         let mut app = with_review();
-        press(&mut app, "]Nlr");
+        walk_to_any_thread(&mut app, true);
+        press(&mut app, "lr");
         assert!(app.input.is_some());
         let open = app.open.clone().unwrap();
         let shown = open.pane.clone().unwrap().place;
@@ -722,15 +677,17 @@ mod tests {
     }
 
     #[test]
-    fn capital_j_k_walk_every_thread_and_r_and_capital_r_act_on_the_one_under_the_cursor() {
+    fn walking_every_thread_r_and_capital_r_act_on_the_one_under_the_cursor() {
         let mut app = with_review();
-        press(&mut app, "TJ");
+        press(&mut app, "T");
+        walk_to_thread(&mut app, true);
         assert_eq!(focused_thread(&app).as_deref(), Some("9f2c0aa1d4e5b6c7"), "the outdated thread, still open");
-        press(&mut app, "J");
+        walk_to_thread(&mut app, true);
         assert_eq!(focused_thread(&app).as_deref(), Some("c0ffee00c0ffee00"), "the resolved one last");
-        press(&mut app, "K");
+        walk_to_thread(&mut app, false);
         assert_eq!(press(&mut app, "R"), vec![Action::Resolve { key: mr_key(), thread: "9f2c0aa1d4e5b6c7".into(), resolved: true }]);
-        press(&mut app, "gJ");
+        press(&mut app, "g");
+        walk_to_thread(&mut app, true);
         let mut actions = press(&mut app, "r");
         actions.extend(type_text(&mut app, "agreed"));
         let [Action::SaveDraft { draft, .. }] = actions.as_slice() else { panic!("{actions:?}") };
@@ -741,7 +698,9 @@ mod tests {
     #[test]
     fn e_and_d_in_every_thread_act_on_my_draft_and_keep_the_list() {
         let mut app = with_saved_draft();
-        press(&mut app, "TJJ");
+        press(&mut app, "T");
+        walk_to_thread(&mut app, true);
+        walk_to_thread(&mut app, true);
         assert_eq!(app.draft_here(), Some(0));
         press(&mut app, "e");
         assert_eq!((app.input_label(), listed_place(&app)), ("edit draft".to_owned(), Some(Place::All)));
@@ -752,7 +711,10 @@ mod tests {
     #[test]
     fn enter_in_every_thread_takes_the_diff_to_the_line_and_opens_its_fold() {
         let mut app = with_review();
-        press(&mut app, "zMTJJ");
+        fold_every_file(&mut app, crate::diff::fold::Fold::Closed);
+        press(&mut app, "T");
+        walk_to_thread(&mut app, true);
+        walk_to_thread(&mut app, true);
         assert!(!app.open.as_ref().unwrap().review.fold.file_is_open("src/pay/charge.rs"));
         app.handle_key(code(KeyCode::Enter));
         let open = app.open.as_ref().unwrap();
@@ -760,7 +722,7 @@ mod tests {
         assert_eq!(open.row().and_then(|row| open.review.place_of(row)), Some(Place::Line { file: 0, new: None, old: Some(13) }));
         assert!(open.pane.as_ref().unwrap().unfolded.contains("c0ffee00c0ffee00"), "a resolved thread unfolds as well");
         assert_eq!((listed_place(&app), app.focus), (Some(Place::All), Focus::Side));
-        press(&mut app, "K");
+        walk_to_thread(&mut app, false);
         app.handle_key(code(KeyCode::Enter));
         assert_eq!(app.open.as_ref().unwrap().row(), Some(&Row::File { index: 0, open: true }), "an outdated thread goes to its file");
         press(&mut app, "g");
@@ -771,7 +733,8 @@ mod tests {
     #[test]
     fn moving_in_the_diff_leaves_every_thread_in_the_pane() {
         let mut app = with_review();
-        press(&mut app, "Th]N");
+        press(&mut app, "Th");
+        walk_to_any_thread(&mut app, true);
         assert_eq!(app.focus, Focus::Review);
         let open = app.open.as_ref().unwrap();
         assert!(open.is_marked(open.row().unwrap()), "on a marked line");
@@ -785,7 +748,8 @@ mod tests {
         press(&mut app, "zzT");
         let list = render(&mut app, 138, 40);
         assert!(list.contains("the whole MR · 3 threads") && list.contains("@@ -12,4"), "the diff over the list:\n{list}");
-        press(&mut app, "JJ");
+        walk_to_thread(&mut app, true);
+        walk_to_thread(&mut app, true);
         app.handle_key(code(KeyCode::Enter));
         let open = app.open.as_ref().unwrap();
         assert_eq!(open.row().and_then(|row| open.review.place_of(row)), Some(Place::Line { file: 0, new: None, old: Some(13) }));
@@ -800,7 +764,7 @@ mod tests {
         let mut app = with_review();
         press(&mut app, "Tm");
         assert_eq!(focused_thread(&app).as_deref(), Some("c0ffee00c0ffee00"), "nina started the resolved thread only");
-        press(&mut app, "J");
+        walk_to_thread(&mut app, true);
         assert_eq!(focused_thread(&app).as_deref(), Some("c0ffee00c0ffee00"), "nothing after it");
         assert_eq!(press(&mut app, "R"), vec![Action::Resolve { key: mr_key(), thread: "c0ffee00c0ffee00".into(), resolved: false }]);
         app.handle_key(code(KeyCode::Enter));

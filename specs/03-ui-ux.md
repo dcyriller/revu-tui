@@ -115,13 +115,13 @@ The badge is the most pressing of:
 The approval mark is two cells of its own, so a red or busy row still shows it: `✓` in `success` on my MR once the forge would merge it (approved, by at least one person), on anyone else's once I approved it, else blank; a stack shows it when all its MRs do.
 
 Rows sort by `updated_at` desc inside a section, and Jev ranks `To review` by urgency when it is on.
-`s` cycles the order inside every section: updated (default), oldest first (created), by author, smallest first (additions + deletions), most urgent first (only when Jev is on). `S` groups `OPEN` and `DRAFTS` by author with a faded sub-header per author. The pane title says both (`Queue · acme/widgets · by author, grouped by author`), and both are remembered per scope in the cache (`queue_view.<scope>.json`).
+`s` cycles the order inside every section: updated (default), oldest first (created), by author, smallest first (additions + deletions), most urgent first (only when Jev is on). The pane title says it (`Queue · acme/widgets · by author`), and it is remembered per scope in the cache (`queue_view.<scope>.json`).
 One author's MRs that build on each other (each targets the branch of the one below it, in one project) are a stack, folded into one row: `▸ feat read shared PDFs` over `romain · 3 MRs · stack` and the newest age.
 Its title is the words the MRs' titles share when they share two or more, else the base MR's title; its badge is the most pressing of its MRs'.
 `enter`, `zo` or `za` on it unfolds it (`▾`): its MRs follow, base first, joined by a faded `│`; `zc` on the stack or on one of its MRs folds it back and puts the cursor on its row.
-Stacks start folded; the unfolded ones are remembered per scope with the order and grouping. Only real chains stack: several MRs by one author that do not target each other stay apart.
+Stacks start folded; the unfolded ones are remembered per scope with the order. Only real chains stack: several MRs by one author that do not target each other stay apart.
 On a terminal at least 160 columns wide the queue is 44 columns instead of 34, which shows about twice the title.
-Every section folds: `zo`, `zc`, `za` (or `enter` on a folded header) act on the section under the cursor. `Done`, `Drafts` and `Other` start folded; what the reader folds or opens is remembered per scope with the order and grouping, so a section folded once stays folded. The cursor skips the headers of open sections and author headers, stops on folded ones, their only row, and opening a section puts it on its first MR.
+Every section folds: `zo`, `zc`, `za` (or `enter` on a folded header) act on the section under the cursor. `Done`, `Drafts` and `Other` start folded; what the reader folds or opens is remembered per scope with the order, so a section folded once stays folded. The cursor skips the headers of open sections, stops on folded ones, their only row, and opening a section puts it on its first MR.
 `b` pins the MR under the cursor and `b` again unpins it; `:pin` and `:unpin` do the same, on the open MR outside the queue. A toast says `pinned !42` or `unpinned !42`.
 A pinned MR leaves its section for `PINNED`, above every other section, so it never shows twice; `PINNED` folds like the others, starts open, and hides when empty. `[m` `]m` meet the pins first.
 Pins are remembered per scope in the cache (`pins.<scope>.json`), by MR key with its host; pinning twice, or unpinning what is not pinned, changes nothing.
@@ -148,7 +148,7 @@ Loading: the sections render with three skeleton rows of `▁▁▁▁▁` in `f
 
 ## The review pane
 
-### Header (2 rows, `zh` folds it to 1)
+### Header (2 rows)
 
 Row 1: author, `source → target`, age, `+adds −dels`, file count, pipeline glyph and word.
 Row 2: approvals `n of m`, thread counts, drafts count. Anything at zero is omitted.
@@ -338,13 +338,10 @@ Marked `M1` `M2` `M3` `M4` by milestone. Everything is in `?` `?`.
 |---|---|---|
 | `Tab` `S-Tab` | next, previous file | M1 |
 | `]c` `[c` | next, previous change (hunk) | M1 |
-| `]n` `[n` | next, previous line with an unresolved thread or my draft, in every file: a folded file or hunk on the way opens and stays open; nothing left says `]N` | M1 |
-| `]N` `[N` | the same, resolved threads too | M1 |
+| `]n` `[n` | next, previous line with an unresolved thread or my draft, in every file: a folded file or hunk on the way opens and stays open; nothing left says `T` lists every thread | M1 |
 | `n` `N` | `]n` `[n`, while no search is kept | post-M5 |
-| `]f` `[f` | next, previous file with unresolved threads | M1 |
 | `za` | toggle fold under the cursor | M1 |
 | `zc` `zo` | close, open | M1 |
-| `zM` `zR` | fold, unfold every file | M1 |
 | `zv` | mark viewed (folds) | M3 |
 | `m` | mark viewed, on to the first change of the next file not viewed | post-M5 |
 | `t` | file tree | M3 |
@@ -372,7 +369,7 @@ Marked `M1` `M2` `M3` `M4` by milestone. Everything is in `?` `?`.
 
 | Key | Action |
 |---|---|
-| `j` `k`, `J` `K` | note by note, thread by thread |
+| `j` `k` | note by note |
 | `enter` | unfold, fold a resolved thread; in every thread, also go to its line in the diff |
 | `T` | every thread of the MR, or close it |
 | `r` `c` | reply, in the compose box |
@@ -392,14 +389,15 @@ A user key never replaces a default: it stands for the default key of its action
 Keys are translated after text boxes, modals and the help had their turn, so typing `(` in a comment is still `(`.
 A two-key binding holds its first key; a second key that matches nothing hands both over as they are, so `z` then `a` stays `za`.
 The config fails to load, naming the file, on an unknown action, a key that does not parse, a key revu already reads (named with its action), and two actions on one key or on keys where one starts the other.
+An action revu once had and removed (`GONE` in `src/keymap.rs`) is not unknown: its binding is skipped with a warning, like an unknown setting, and the rest loads.
 `?` shows the keys in effect: with the preset, `]n [n` reads `)n (n`, and a bound key comes first (`F )n (n`).
 
 ### Search: `ctrl-k`, `⌘k`, `,`, `:`
 
-One popup finds MRs, files and commands, picked by the first character as VS Code does.
-Nothing typed searches the queue's MRs; `/` first searches the open MR's files; `>` first runs commands, and `⌫` on an empty line steps back to MRs.
+One popup finds MRs and commands, picked by the first character as VS Code does.
+Nothing typed searches the queue's MRs; `>` first runs commands, and `⌫` on an empty line steps back to MRs.
 `ctrl-k`, `⌘k` and `,` open it on MRs; `:` and `⌘⇧k` (where the terminal tells it apart) open it on commands.
-The prompt shows the mode (`›`, `/`, `>`) and the title says what it searches.
+The prompt shows the mode (`›`, `>`) and the title says what it searches.
 
 MR terms (`src/query.rs`, shared with the queue filter and saved views): free words, `"quoted words"`, `@author` (`@me`; several are any of them), `!42` or `#42` (several are any of them), `~label` (`~"two words"`; several are all of them).
 The terms keep MRs, then the free words rank them fuzzily; `@loic ~infra slack` finds Loïc's infra MRs about slack.

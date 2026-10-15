@@ -9,6 +9,9 @@ Each entry says what changed, then where, then how to use it.
 
 ### New
 
+- **A binding on an action revu removed only warns.**
+  In `[keys.bind]`: revu starts, says which action it skipped, and loads your other keys.
+  Delete that line to stop the warning.
 - **Mark a file viewed and move on in one key.**
   In the diff and zen, on a thread row, and as `viewed` in the phone's tap bar.
   `m` marks the file viewed and jumps to the first change of the next file not viewed; `zv` still stays put.
@@ -28,7 +31,7 @@ Each entry says what changed, then where, then how to use it.
   Only the ctrl keys the help lists act: `^d` `^u` `^f` `^b` `^k` `^v` and `^c`.
 - **The file tree, the outline and the pipeline page like the other panes.**
   In the right pane: `^f` and `^b` move a full page there too, and `x` closes the file tree.
-- **`[keys.bind]` no longer takes `a c` or the arrow keys from revu.**
+- **`[keys.bind]` no longer takes the arrow keys from revu.**
   In `config.toml`: revu stops at start and names the key, as it does for any key already taken.
 - **`revu usage` counts what each key did.**
   In `revu usage`: a key that does nothing, like `c` in prose, no longer counts; `enter` in the thread pane counts as what it did.
@@ -37,6 +40,10 @@ Each entry says what changed, then where, then how to use it.
   Actions follow the order of the keys reference, and commands the order of the palette.
 - **Your own keys work on the cover page.**
   On the MR cover page, `i`: a key from `[keys.bind]` does what its action does there, as in every other pane.
+- **Your own keys work on the news page too.**
+  On the page `:news` opens: a key from `[keys.bind]` closes or scrolls it like its default key.
+- **A second key pressed with ctrl no longer finishes a two-key sequence.**
+  After `z`, `[`, `]`, `a` or `'`: `z` then `^a` does nothing, as `^a` alone does.
 - **A second host that misses one refresh keeps its MRs.**
   In the queue across several hosts, such as a GitLab behind a VPN: its last rows stay, and a toast names it.
   Once it answers again, no notification comes for an MR you already had.
@@ -48,6 +55,21 @@ Each entry says what changed, then where, then how to use it.
 - **GitHub's secondary rate limit is waited out.**
   On GitHub, when it asks revu to slow down while requests are left.
   A short wait passes on its own; a long one says `rate limited until 14:05`, and refreshing comes back then.
+
+### Removed
+
+- **Grouping the queue by author, `S`.**
+  In the queue: `s` still sorts by author, which keeps one author's MRs together.
+- **Folding the MR header with `zh`, and every file with `zM` and `zR`.**
+  In the diff: `za`, `zo` and `zc` still fold one file; in the prose view `zR` and `zM` still show and fold the unchanged blocks.
+- **Jumping thread by thread with `J` and `K`.**
+  In the thread pane and the list of every thread: `j` and `k` walk the notes.
+- **The ready-made questions to Claude: `a e`, `a r`, `a s`, `a t` and `a c`.**
+  In the diff and the thread pane: `a a` or `:ask` asks the same in your own words.
+- **The jumps `]N` `[N`, `]f` `[f` and `]r` `[r`.**
+  In the diff and the queue: `]n` `[n` still jump between open threads, `T` lists every thread, and `]m` `[m` change MR.
+- **Finding a file of the open MR with `^k` then `/`.**
+  In the search box: `t` opens the file tree, and `/` in the diff finds a path too.
 
 ## 0.8.0 - 2026-10-14
 

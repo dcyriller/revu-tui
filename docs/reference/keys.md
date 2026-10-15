@@ -20,9 +20,6 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 | `]c` `[c` | next, previous hunk |
 | `]n` `[n` | next, previous open conversation |
 | `n` `N` | the same, while no search is on |
-| `]N` `[N` | next, previous conversation, resolved too |
-| `]f` `[f` | next, previous file with a thread |
-| `]r` `[r` | next, previous MR that needs you |
 | `]m` `[m` | next, previous MR in the queue |
 
 ## Queue
@@ -33,7 +30,6 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 | `'` `1-9` | a saved view, by letter or rank |
 | `*` | this repo, or every project |
 | `s` | next sort order |
-| `S` | group by author |
 | `b` | pin on top of the queue, or unpin |
 | `zo` `zc` | open, fold the section or stack |
 
@@ -55,8 +51,7 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 | `=` `+` | more lines, react on a thread |
 | `^v` | the file in your own program |
 | `za` `zc` `zo` | toggle, close, open the fold |
-| `zM` `zR` | fold, unfold every file |
-| `zh` | fold the MR header |
+| `zR` `zM` | in prose: show, fold the unchanged blocks |
 | `zv` | file viewed: it folds away |
 | `m` | file viewed, on to the next one |
 
@@ -85,7 +80,6 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 |---|---|
 | `r` `c` | reply, as a draft |
 | `R` | resolve, unresolve |
-| `J` `K` | next, previous thread |
 | `T` | every thread; enter goes to it |
 | `m` | every thread: only mine, or all |
 | `e` `d` | edit, delete my draft |
@@ -107,8 +101,7 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 
 | Keys | Does |
 |---|---|
-| `a` `e` `r` `s` | explain, risks, summary |
-| `a` `t` `c` `a` | thread, comment, anything |
+| `a` `a` | ask anything about the cursor |
 | `a` `h` | answers kept for this MR |
 | `c` `⏎` `R` `y` | answer: draft, follow up, again, copy |
 
@@ -116,7 +109,7 @@ A key like `]n` is two keys in a row: `]`, then `n`.
 
 | Keys | Does |
 |---|---|
-| `^k` `,` | MRs · / files · > commands |
+| `^k` `,` | MRs · > commands |
 | `:` | commands: :go !42, :set theme=nord |
 | `o` `y` | open in the browser, copy the link |
 | `ag` | the agent session of the MR: a, then g |
@@ -133,9 +126,6 @@ The old ones keep working.
 |---|---|
 | `]c` `[c` | `)c` `(c` |
 | `]n` `[n` | `)n` `(n` |
-| `]N` `[N` | `)N` `(N` |
-| `]f` `[f` | `)f` `(f` |
-| `]r` `[r` | `)r` `(r` |
 | `]m` `[m` | `)m` `(m` |
 
 ## Actions you can bind
@@ -147,14 +137,8 @@ A bound key adds to the default key, it does not replace it.
 |---|---|
 | `next_thread` | `]n` |
 | `prev_thread` | `[n` |
-| `next_any_thread` | `]N` |
-| `prev_any_thread` | `[N` |
 | `next_hunk` | `]c` |
 | `prev_hunk` | `[c` |
-| `next_file_unresolved` | `]f` |
-| `prev_file_unresolved` | `[f` |
-| `next_review` | `]r` |
-| `prev_review` | `[r` |
 | `next_file` | `tab` |
 | `prev_file` | `backtab` |
 | `fold_toggle` | `za` |
@@ -162,7 +146,6 @@ A bound key adds to the default key, it does not replace it.
 | `fold_close` | `zc` |
 | `fold_all` | `zM` |
 | `unfold_all` | `zR` |
-| `fold_header` | `zh` |
 | `viewed` | `zv` |
 | `zen` | `zz` |
 | `prev_mr` | `[m` |
@@ -197,7 +180,6 @@ A bound key adds to the default key, it does not replace it.
 | `copy_link` | `y` |
 | `scope` | `*` |
 | `sort_queue` | `s` |
-| `group_by_author` | `S` |
 | `filter` | `/` |
 | `palette` | `:` |
 | `views` | `'` |

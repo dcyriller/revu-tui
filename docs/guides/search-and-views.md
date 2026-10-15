@@ -1,6 +1,6 @@
 # Search and saved views
 
-`⌘K` finds any MR, file or command, and `/` filters the queue with the same words.
+`⌘K` finds any MR or command, and `/` filters the queue with the same words.
 
 ## Search with ⌘K
 
@@ -11,7 +11,6 @@ The first character picks what you search.
 | You type | Finds |
 |---|---|
 | `charge` | MRs whose title, author, project or branch hold the word |
-| `/charge.rs` | Files of the open MR |
 | `>publish` | Commands |
 
 `:` opens the search on commands directly.
@@ -62,12 +61,11 @@ Press `'` then the first letter of a view to apply it.
 `1` to `9` apply views in name order.
 Two views may not start with the same letter.
 
-## Sort and group
+## Sort
 
 | Key in the queue | Does |
 |---|---|
 | `s` | Next order: updated, oldest, author, size |
-| `S` | Group OPEN and DRAFTS by author |
 | `*` | This project, or every project |
 
 ## See also

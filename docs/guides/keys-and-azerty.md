@@ -17,9 +17,7 @@ Now `(` and `)` work like `[` and `]`.
 | Default | With AZERTY |
 |---|---|
 | `]n` `[n` | `)n` `(n` |
-| `]N` `[N` | `)N` `(N` |
 | `]c` `[c` | `)c` `(c` |
-| `]f` `[f` | `)f` `(f` |
 | `]m` `[m` | `)m` `(m` |
 
 The bracket keys keep working.
@@ -39,6 +37,7 @@ It adds to the default key, it does not replace it.
 
 A key can be one character, two in a row like `")x"`, or a name like `ctrl-e` or `tab`.
 revu stops at start if a key already has a job, and names the action that owns it.
+A binding on an action revu no longer has only warns, and the rest of your keys load.
 
 ## See also
 
