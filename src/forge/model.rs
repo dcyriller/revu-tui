@@ -2,6 +2,7 @@
 //! own wire shapes to these at its edge; nothing above `forge` sees a GitLab or GitHub field.
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// The one way an MR is addressed: the path of its project (`group/sub/project`, `owner/repo`)
 /// and its number there.
@@ -142,32 +143,48 @@ pub struct Refs {
     pub head: Sha,
 }
 
-/// A commit id, typed apart from branch names and paths that sit next to it in a call.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Sha(String);
+/// A commit id: 1 to 64 hex digits, never anything else, so it can name a cache file.
+/// Stored as a plain JSON string.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Sha(Arc<str>);
 
 impl Sha {
+    /// SHA-256 object names are 64 digits; SHA-1 ones 40.
+    const MAX_LEN: usize = 64;
+
+    pub fn parse(text: &str) -> Option<Self> {
+        let valid = (1..=Self::MAX_LEN).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit());
+        valid.then(|| Self(text.into()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<&str> for Sha {
-    fn from(sha: &str) -> Self {
-        Self(sha.to_owned())
-    }
-}
-
-impl From<String> for Sha {
-    fn from(sha: String) -> Self {
-        Self(sha)
     }
 }
 
 impl std::fmt::Display for Sha {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl Serialize for Sha {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Sha {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Sha::parse(&text).ok_or_else(|| serde::de::Error::custom(format!("`{text}` is not a commit sha")))
+    }
+}
+
+#[cfg(test)]
+impl From<&str> for Sha {
+    fn from(text: &str) -> Self {
+        Sha::parse(text).unwrap_or_else(|| panic!("`{text}` is not a commit sha"))
     }
 }
 
@@ -343,8 +360,38 @@ pub enum FileKind {
 /// A thread as the forge holds it: its notes in order, the first one carrying where it hangs.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Discussion {
-    pub id: String,
+    pub id: ThreadId,
     pub notes: Vec<Note>,
+}
+
+/// A thread's id as its forge names it: GitLab's discussion id, GitHub's review thread node id.
+/// Any text the forge sent; stored as a plain JSON string.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ThreadId(Arc<str>);
+
+impl ThreadId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for ThreadId {
+    fn from(id: &str) -> Self {
+        Self(id.into())
+    }
+}
+
+impl From<String> for ThreadId {
+    fn from(id: String) -> Self {
+        Self(id.into())
+    }
+}
+
+impl std::fmt::Display for ThreadId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -604,7 +651,7 @@ pub struct Draft {
     /// On a line; `None` on the MR itself or in a reply.
     pub position: Option<Position>,
     /// The thread it answers.
-    pub reply_to: Option<String>,
+    pub reply_to: Option<ThreadId>,
     /// Publishing it also resolves the thread it answers.
     pub resolve: bool,
 }
@@ -614,7 +661,7 @@ pub struct Draft {
 pub struct NewDraft {
     pub body: String,
     pub position: Option<Position>,
-    pub reply_to: Option<String>,
+    pub reply_to: Option<ThreadId>,
     pub resolve: bool,
 }
 
@@ -726,6 +773,15 @@ mod tests {
         assert_eq!(Mr { draft: true, ..mergeable() }.draft_refusal(), None);
         assert_eq!(Mr { mine: false, ..mergeable() }.draft_refusal().as_deref(), Some("it is not yours"));
         assert_eq!(Mr { state: MrState::Closed, ..mergeable() }.draft_refusal().as_deref(), Some("this MR is closed"));
+    }
+
+    #[test]
+    fn a_sha_holds_hex_digits_only_so_no_cache_path_comes_from_anything_else() {
+        assert_eq!(Sha::parse("0123abcDEF").map(|sha| sha.to_string()).as_deref(), Some("0123abcDEF"));
+        for bad in ["", "../etc", "ab/cd", "beef ", "g", &"a".repeat(65)] {
+            assert_eq!(Sha::parse(bad), None, "{bad:?}");
+        }
+        assert!(serde_json::from_str::<Refs>(r#"{"base": "aaaa", "start": "aaaa", "head": "../../x"}"#).is_err());
     }
 
     #[test]

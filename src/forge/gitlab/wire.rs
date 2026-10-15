@@ -1,5 +1,5 @@
 //! GitLab's JSON as it comes and goes, and its conversion to and from the neutral model.
-use crate::forge::{self, LineRef, Refs};
+use crate::forge::{self, LineRef, Refs, Sha, ThreadId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -92,14 +92,14 @@ impl Mr {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffRefs {
-    pub base_sha: String,
-    pub head_sha: String,
-    pub start_sha: String,
+    pub base_sha: Sha,
+    pub head_sha: Sha,
+    pub start_sha: Sha,
 }
 
 impl From<DiffRefs> for Refs {
     fn from(refs: DiffRefs) -> Self {
-        Self { base: refs.base_sha.into(), start: refs.start_sha.into(), head: refs.head_sha.into() }
+        Self { base: refs.base_sha, start: refs.start_sha, head: refs.head_sha }
     }
 }
 
@@ -178,7 +178,7 @@ fn nested_users<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<User>, D::Error> 
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct Discussion {
-    pub id: String,
+    pub id: ThreadId,
     pub notes: Vec<Note>,
 }
 
@@ -276,7 +276,8 @@ pub struct LineCode {
 }
 
 impl Position {
-    /// Only a note on text lines hangs in the diff; one on an image is a note on the MR here.
+    /// Only a note on text lines hangs in the diff; one on an image, or with a sha that is not one,
+    /// is a note on the MR here, so one odd note does not lose every thread.
     fn into_model(self) -> Option<forge::Position> {
         if self.position_type != "text" {
             return None;
@@ -285,7 +286,7 @@ impl Position {
         line.number()?;
         let new_path = self.new_path.clone().or_else(|| self.old_path.clone())?;
         Some(forge::Position {
-            refs: Refs { base: self.base_sha.into(), start: self.start_sha.into(), head: self.head_sha.into() },
+            refs: Refs { base: Sha::parse(&self.base_sha)?, start: Sha::parse(&self.start_sha)?, head: Sha::parse(&self.head_sha)? },
             old_path: self.old_path.unwrap_or_else(|| new_path.clone()),
             new_path,
             line,
@@ -332,7 +333,7 @@ pub struct DraftNote {
     pub id: u64,
     pub note: String,
     #[serde(default)]
-    pub discussion_id: Option<String>,
+    pub discussion_id: Option<ThreadId>,
     #[serde(default)]
     pub resolve_discussion: bool,
     #[serde(default)]
@@ -369,7 +370,7 @@ pub struct NewDraft {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub in_reply_to_discussion_id: Option<String>,
+    pub in_reply_to_discussion_id: Option<ThreadId>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub resolve_discussion: bool,
 }
@@ -541,7 +542,7 @@ mod tests {
         assert_eq!(drafts[1].line_code.as_deref(), Some("2f1d_0_13"));
         let drafts: Vec<forge::Draft> = drafts.into_iter().map(forge::Draft::from).collect();
         assert_eq!(drafts[0].position, None);
-        assert_eq!(drafts[0].reply_to.as_deref(), Some("6a9c1750"));
+        assert_eq!(drafts[0].reply_to, Some("6a9c1750".into()));
         let anchored = drafts[1].position.as_ref().unwrap();
         assert_eq!((anchored.new_path.as_str(), anchored.line.new), ("src/pay/charge.rs", Some(13)));
     }
@@ -573,6 +574,13 @@ mod tests {
     fn an_image_position_hangs_nowhere() {
         let mut note: Note = parse::<Discussion>(include_str!("fixtures/diff_note.json")).notes.remove(0);
         note.position = note.position.map(|p| Position { position_type: "image".into(), ..p });
+        assert_eq!(forge::Note::from(note).position, None);
+    }
+
+    #[test]
+    fn a_position_with_a_sha_that_is_not_one_hangs_nowhere() {
+        let mut note: Note = parse::<Discussion>(include_str!("fixtures/diff_note.json")).notes.remove(0);
+        note.position = note.position.map(|p| Position { head_sha: "../x".into(), ..p });
         assert_eq!(forge::Note::from(note).position, None);
     }
 
