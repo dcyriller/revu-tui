@@ -183,7 +183,7 @@ impl Forge {
                 Forge::GitHub(client) => client.image(url).await,
             }
         };
-        tokio::time::timeout(image::TIMEOUT, fetch).await.map_err(|_| anyhow::anyhow!("timed out"))?
+        tokio::time::timeout(image::TIMEOUT, fetch).await.map_err(|_elapsed| anyhow::anyhow!("timed out"))?
     }
 
     /// Commits `suggestion` on the MR's source branch `branch`.
@@ -329,9 +329,17 @@ impl Forge {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use crate::config::Host;
+
+    #[test]
+    fn a_connected_forge_never_prints_its_token() {
+        for (kind, host, token) in [(Kind::GitLab, "gitlab.com", "glpat-xxxx"), (Kind::GitHub, "github.com", "ghp_xxxx")] {
+            let forge = Forge::connect(kind, &Credentials { host: host.into(), token: token.into() }).unwrap();
+            let printed = format!("{forge:?}");
+            assert!(!printed.contains(token), "{printed}");
+        }
+    }
 
     #[test]
     fn the_host_names_the_forge_unless_the_config_says_otherwise() {
