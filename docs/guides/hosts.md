@@ -10,7 +10,14 @@ revu login github.com --from-gh           # github.com
 revu login gitlab.acme.dev --token - < token.txt
 ```
 
-`GITLAB_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN` override the keychain for scripts.
+`GITLAB_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN` override the keychain for scripts, on the main host only.
+
+| Variable | Host it is sent to |
+|---|---|
+| `GITLAB_TOKEN` | `--host`, else `GITLAB_HOST`, else `host` in the config, when it is a GitLab host; else gitlab.com |
+| `GITHUB_TOKEN`, `GH_TOKEN` | `--host`, else `GITLAB_HOST`, else `host` in the config, when it is a GitHub host; else github.com |
+
+The other hosts of the queue use the token `revu login` stored for each.
 
 ## Which host revu uses
 
