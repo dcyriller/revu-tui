@@ -7,6 +7,12 @@ Each entry says what changed, then where, then how to use it.
 
 ## Unreleased
 
+### Fixed
+
+- **`n` moves on from a match on a changed line.**
+  In the diff, side by side or with a short change read inline, where a removed line and its new version share a row.
+  After `/`, `n` no longer stays on a row whose new side holds the match, and the count shows its place.
+
 ## 0.10.1 - 2026-10-16
 
 ### Fixed
