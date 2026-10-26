@@ -135,7 +135,7 @@ impl Open {
     }
 }
 
-/// Every match in the MR, in reading order: a file's path first, then its lines.
+/// Every match in the MR, in reading order: a file's path first, then the lines the view can show.
 fn hits(review: &Review, query: &str) -> Vec<Hit> {
     let mut found = vec![];
     for (f, file) in review.files.iter().enumerate() {
@@ -143,7 +143,7 @@ fn hits(review: &Review, query: &str) -> Vec<Hit> {
             found.push(Hit { file: f, hunk: None, line: None });
         }
         for (h, hunk) in file.hunks.iter().enumerate() {
-            let lines = hunk.lines.iter().enumerate().filter(|(_, line)| finds(&line.text, query));
+            let lines = hunk.lines.iter().enumerate().filter(|(_, line)| review.shows_line(line) && finds(&line.text, query));
             found.extend(lines.map(|(l, _)| Hit { file: f, hunk: Some(h), line: Some(l) }));
         }
     }
@@ -332,5 +332,20 @@ mod tests {
         assert!(text_here(&app).contains("fn idempotency_key"), "{}", text_here(&app));
         press(&mut app, "N");
         assert_eq!(app.search_count().as_deref(), Some("1/2"));
+    }
+
+    #[test]
+    fn a_peek_leaves_the_side_it_hides_out_of_the_search() {
+        let mut app = with_review();
+        press(&mut app, ">");
+        press(&mut app, "/let");
+        app.handle_key(code(KeyCode::Enter));
+        let mut seen = vec![app.search_count().unwrap()];
+        for _ in 0..2 {
+            press(&mut app, "n");
+            seen.push(app.search_count().unwrap());
+        }
+        assert_eq!(seen, ["1/3", "2/3", "3/3"], "the removed `let client` line is hidden, so n skips it");
+        assert!(text_here(&app).contains("let response"), "{}", text_here(&app));
     }
 }
