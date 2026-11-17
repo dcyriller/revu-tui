@@ -1,5 +1,6 @@
 ---
 source: src/tui/app/tests.rs
+assertion_line: 79
 expression: "render(&mut app, 80, 24)"
 ---
 ╭ Queue · all ───────────────────╮╭ Review ────────────────────────────────────╮
@@ -22,7 +23,7 @@ expression: "render(&mut app, 80, 24)"
 │    │          *  this repo, or every project                           │     │
 │    │          s  next sort order                                       │     │
 │    │                                                                   │     │
-│    ╰────────────────────────────── 4–19 of 75 · j k scroll · esc close ╯     │
+│    ╰────────────────────────────── 4–19 of 76 · j k scroll · esc close ╯     │
 │                                ││                                            │
 ╰────────────────────────────────╯╰────────────────────────────────────────────╯
  gitlab.com · nina                                                       ? help

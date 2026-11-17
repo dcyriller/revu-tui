@@ -7,6 +7,12 @@ Each entry says what changed, then where, then how to use it.
 
 ## Unreleased
 
+### New
+
+- **`zt` and `zb` scroll the diff so the cursor line sits at the top or the bottom.**
+  In the diff, as in vim; the sticky file and hunk headers stay above the line.
+  Press `zt` or `zb`, or bind `line_to_top` and `line_to_bottom` under `[keys.bind]`.
+
 ## 0.14.0 - 2026-11-06
 
 ### New

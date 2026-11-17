@@ -141,13 +141,40 @@ mod tests {
         assert_eq!(StickyRows { file: Some(1), hunk: Some(2) }.count(), 2);
     }
 
-    /// The text of the line under the cursor, as the diff draws it.
-    fn cursor_text(app: &App) -> String {
+    fn text_beside_cursor(app: &App, offset: isize) -> String {
         let open = app.open.as_ref().unwrap();
-        match open.row() {
+        match open.rows.get(open.selected.checked_add_signed(offset).unwrap()) {
             Some(Row::Line { file, hunk, index }) => open.review.files[*file].hunks[*hunk].lines[*index].text.trim().to_owned(),
             _ => String::new(),
         }
+    }
+
+    fn cursor_text(app: &App) -> String {
+        text_beside_cursor(app, 0)
+    }
+
+    #[test]
+    fn zt_scrolls_the_cursor_line_to_the_top_below_the_sticky_headers() {
+        let mut app = with_long_review();
+        to_step(&mut app, 45);
+        render(&mut app, 120, 30);
+        press(&mut app, "zt");
+        let screen = render(&mut app, 120, 30);
+        assert!(screen.contains(&cursor_text(&app)), "{screen}");
+        assert!(!screen.contains(&text_beside_cursor(&app, -1)), "the line above left the view:\n{screen}");
+    }
+
+    #[test]
+    fn zb_scrolls_the_cursor_line_to_the_bottom() {
+        let mut app = with_long_review();
+        to_step(&mut app, 45);
+        render(&mut app, 120, 30);
+        press(&mut app, "zt");
+        render(&mut app, 120, 30);
+        press(&mut app, "zb");
+        let screen = render(&mut app, 120, 30);
+        assert!(screen.contains(&cursor_text(&app)), "{screen}");
+        assert!(!screen.contains(&text_beside_cursor(&app, 1)), "the line below left the view:\n{screen}");
     }
 
     #[test]

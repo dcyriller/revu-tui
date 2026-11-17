@@ -423,6 +423,8 @@ impl App {
             Act::FoldOpen => return self.fold_at_cursor(Some(true)),
             Act::FoldClose => return self.fold_at_cursor(Some(false)),
             Act::Zen => return self.toggle_zen(),
+            Act::LineToTop => self.update_open(|open| super::Open { scroll: open.selected, ..open }),
+            Act::LineToBottom => self.update_open(|open| super::Open { scroll: 0, ..open }),
             Act::Viewed => return self.toggle_viewed(),
             Act::NextMr | Act::PrevMr => return self.step_mr(Toward::next_if(act == Act::NextMr)),
             Act::NextHunk | Act::PrevHunk => self.review_jump(Toward::next_if(act == Act::NextHunk), |r| matches!(r, Row::Hunk { .. })),
