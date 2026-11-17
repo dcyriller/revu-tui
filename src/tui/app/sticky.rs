@@ -149,32 +149,99 @@ mod tests {
         }
     }
 
-    fn cursor_text(app: &App) -> String {
-        text_beside_cursor(app, 0)
+    fn screen_after(app: &mut App, keys: &str, width: u16, height: u16) -> String {
+        render(app, width, height);
+        press(app, keys);
+        render(app, width, height)
+    }
+
+    fn view_from_cursor(app: &mut App) {
+        let open = app.open.take().unwrap();
+        app.open = Some(Open { scroll: open.selected, ..open });
+    }
+
+    fn assert_cursor_at_top(app: &mut App, width: u16, height: u16) {
+        let screen = screen_after(app, "zt", width, height);
+        assert!(screen.contains(&text_beside_cursor(app, 0)), "{screen}");
+        assert!(!screen.contains(&text_beside_cursor(app, -1)), "the line above left the view:\n{screen}");
+    }
+
+    fn assert_cursor_at_bottom(app: &mut App, width: u16, height: u16) {
+        view_from_cursor(app);
+        let screen = screen_after(app, "zb", width, height);
+        assert!(screen.contains(&text_beside_cursor(app, 0)), "{screen}");
+        assert!(!screen.contains(&text_beside_cursor(app, 1)), "the line below left the view:\n{screen}");
+    }
+
+    fn deep_in_the_long_file() -> App {
+        let mut app = with_long_review();
+        to_step(&mut app, 45);
+        app
     }
 
     #[test]
     fn zt_scrolls_the_cursor_line_to_the_top_below_the_sticky_headers() {
-        let mut app = with_long_review();
-        to_step(&mut app, 45);
-        render(&mut app, 120, 30);
-        press(&mut app, "zt");
-        let screen = render(&mut app, 120, 30);
-        assert!(screen.contains(&cursor_text(&app)), "{screen}");
-        assert!(!screen.contains(&text_beside_cursor(&app, -1)), "the line above left the view:\n{screen}");
+        assert_cursor_at_top(&mut deep_in_the_long_file(), 120, 30);
     }
 
     #[test]
     fn zb_scrolls_the_cursor_line_to_the_bottom() {
-        let mut app = with_long_review();
-        to_step(&mut app, 45);
+        assert_cursor_at_bottom(&mut deep_in_the_long_file(), 120, 30);
+    }
+
+    #[test]
+    fn zt_and_zb_work_on_a_screen_too_short_for_sticky_headers() {
+        assert_cursor_at_top(&mut deep_in_the_long_file(), 120, 14);
+        assert_cursor_at_bottom(&mut deep_in_the_long_file(), 120, 14);
+    }
+
+    fn wrapped_long_lines() -> App {
+        let lines = (0..60).map(|i| format!("+line_{i:03} {}\n", "x".repeat(150))).collect::<String>();
+        let mut app = with_review_of("src/long.rs", &format!("@@ -0,0 +1,60 @@\n{lines}"));
+        app.focus = Focus::Review;
+        press(&mut app, "w");
+        to_step(&mut app, 44);
+        app
+    }
+
+    #[test]
+    fn zt_lifts_a_wrapped_cursor_line_to_the_top() {
+        let mut app = wrapped_long_lines();
+        let screen = screen_after(&mut app, "zt", 60, 30);
+        assert!(screen.contains("line_044") && !screen.contains("line_043"), "{screen}");
+    }
+
+    #[test]
+    fn zb_drops_a_wrapped_cursor_line_as_low_as_whole_lines_allow() {
+        let mut app = wrapped_long_lines();
+        view_from_cursor(&mut app);
+        let screen = screen_after(&mut app, "zb", 60, 30);
+        assert!(
+            screen.contains("line_040") && !screen.contains("line_039"),
+            "four wrapped lines fill the view above the cursor:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn zt_and_zb_keep_the_selection() {
+        let mut app = deep_in_the_long_file();
+        press(&mut app, "Vjj");
+        let before = app.open.as_ref().map(|open| (open.select_from, open.selected));
+        screen_after(&mut app, "zt", 120, 30);
+        screen_after(&mut app, "zb", 120, 30);
+        assert_eq!(app.open.as_ref().map(|open| (open.select_from, open.selected)), before);
+    }
+
+    #[test]
+    fn zt_and_zb_do_nothing_in_the_queue_and_are_not_counted() {
+        let mut app = with_queue();
+        app.usage.tally = Some(crate::usage::Tally::default());
         render(&mut app, 120, 30);
-        press(&mut app, "zt");
-        render(&mut app, 120, 30);
-        press(&mut app, "zb");
-        let screen = render(&mut app, 120, 30);
-        assert!(screen.contains(&cursor_text(&app)), "{screen}");
-        assert!(!screen.contains(&text_beside_cursor(&app, 1)), "the line below left the view:\n{screen}");
+        app.take_usage();
+        let before = (app.queue_scroll, app.open.clone());
+        press(&mut app, "ztzb");
+        assert_eq!((app.queue_scroll, app.open.clone()), before);
+        assert_eq!(app.take_usage(), None);
     }
 
     #[test]
@@ -183,7 +250,7 @@ mod tests {
         for _ in 0..70 {
             press(&mut app, "j");
             let screen = render(&mut app, 120, 30);
-            let text = cursor_text(&app);
+            let text = text_beside_cursor(&app, 0);
             assert!(text.is_empty() || screen.contains(&text), "`{text}` is hidden:\n{screen}");
         }
     }

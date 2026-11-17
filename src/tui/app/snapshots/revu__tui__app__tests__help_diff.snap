@@ -1,6 +1,5 @@
 ---
 source: src/tui/app/tests.rs
-assertion_line: 58
 expression: "render(&mut app, 100, 30)"
 ---
 ╭ acme/widgets!42 · feat: charge cards at checkout ────────────────────────────────────────────────╮

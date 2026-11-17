@@ -1,6 +1,5 @@
 ---
 source: src/tui/app/tests.rs
-assertion_line: 79
 expression: "render(&mut app, 80, 24)"
 ---
 ╭ Queue · all ───────────────────╮╭ Review ────────────────────────────────────╮
