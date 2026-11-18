@@ -229,7 +229,7 @@ mod tests {
         press(&mut app, "v");
         read(&mut app);
         app.take_usage();
-        press(&mut app, "tcAo]n");
+        press(&mut app, "tcAo]nztzb");
         assert_eq!(app.take_usage(), None, "the diff's keys do nothing here");
         press(&mut app, "jG");
         let counts = app.take_usage().unwrap().actions;

@@ -39,10 +39,10 @@ expression: "render(&mut app, 160, 45)"
 │             │          p  pipeline                                                          r  refresh                                        │              │
 │             │          v  prose: the Markdown file rendered, its blocks marked              ?  this help                                      │              │
 │             │         zz  zen: the diff alone, quiet                                     q ^c  quit: twice; q closes a pane first             │              │
+│             │      zt zb  scroll the line to the top, the bottom                                                                              │              │
 │             │        w W  wrap long lines, hide whitespace changes                                                                            │              │
-│             │          =  more lines                                                                                                          │              │
 │             │                                                                                                                                 │              │
-│             ╰──────────────────────────────────────────────────────────────────────────────────────────── 1–35 of 41 · j k scroll · esc close ╯              │
+│             ╰──────────────────────────────────────────────────────────────────────────────────────────── 1–35 of 42 · j k scroll · esc close ╯              │
 │                                          ││                                                                                                                  │
 │                                          ││                                                                                                                  │
 ╰──────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
