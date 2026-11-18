@@ -6,6 +6,26 @@ use crate::review::{Draft, DraftId, Place, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use vtui::editor::Edited;
 
+/// The keys of a box whose `enter` saves: a comment or a reply as a draft, a draft changed, the share note.
+pub(crate) const SAVE_KEYS: &str = "enter save · ⌘enter post · ⌥enter newline";
+
+/// What frames a compose box: what it writes in the top border, its keys in the bottom one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Legend {
+    pub(crate) label: String,
+    pub(crate) keys: &'static str,
+}
+
+impl Input {
+    /// The keys its box names: what `enter` does to this kind of text.
+    fn keys(&self) -> &'static str {
+        match self {
+            Input::Comment { .. } | Input::Reply { .. } | Input::EditDraft { .. } => SAVE_KEYS,
+            Input::EditNote { .. } => "enter publish · esc cancel",
+        }
+    }
+}
+
 impl App {
     /// Opens the compose box on `input`, in the diff under the row it will land after where the diff holds it, else
     /// in the pane at its line; `text` prefills it, else the text left unsent for that target earlier comes back.
@@ -29,8 +49,8 @@ impl App {
         let place = match input {
             Input::Comment { position } => place_of_position(review, position),
             Input::Reply { .. } if open.pane.is_some() => None,
-            Input::EditDraft { .. } if open.lists_every_thread() => None,
-            Input::Reply { thread } => Some(place_of_thread(review, thread)),
+            Input::EditDraft { .. } | Input::EditNote { .. } if open.lists_every_thread() => None,
+            Input::Reply { thread } | Input::EditNote { thread, .. } => Some(place_of_thread(review, thread)),
             Input::EditDraft { draft } => {
                 review.drafts.iter().find(|d| d.is(*draft)).map(|draft| match (&draft.position, &draft.reply_to) {
                     (Some(position), _) => place_of_position(review, position).unwrap_or(Place::Mr),
@@ -120,7 +140,7 @@ impl App {
     }
 
     /// The box comes back with the text left unsent when nothing else is being written on that MR.
-    fn reopen_input(&mut self, key: &MrKey, input: Input) {
+    pub(super) fn reopen_input(&mut self, key: &MrKey, input: Input) {
         if self.input.is_none() && self.open.as_ref().is_some_and(|o| &o.key == key) {
             self.open_input(input, "");
         }
@@ -153,6 +173,7 @@ impl App {
             }
             Input::Reply { thread } => self.add_draft(Draft::reply(thread, text)),
             Input::EditDraft { draft } => self.change_draft(draft, text),
+            Input::EditNote { thread, note } => self.change_note(thread, note, text),
         }
     }
 
@@ -209,8 +230,13 @@ impl App {
         update.into_iter().collect()
     }
 
+    /// The frame of the compose box: its title, and the keys of what is being written.
+    pub(crate) fn input_legend(&self) -> Legend {
+        Legend { label: self.input_label(), keys: self.input.as_ref().map_or(SAVE_KEYS, Input::keys) }
+    }
+
     /// The compose box's title: `new thread · charge.rs:57`, `new thread · charge.rs:55–57`,
-    /// `reply to nina`, `edit draft`.
+    /// `reply to nina`, `edit draft`, `edit comment`.
     pub(crate) fn input_label(&self) -> String {
         match &self.input {
             Some(Input::Comment { position }) => {
@@ -231,6 +257,7 @@ impl App {
                 format!("reply to {}", author.unwrap_or_else(|| "the thread".into()))
             }
             Some(Input::EditDraft { .. }) => "edit draft".to_owned(),
+            Some(Input::EditNote { .. }) => "edit comment".to_owned(),
             None => String::new(),
         }
     }
@@ -241,7 +268,7 @@ impl Post {
         match input {
             Input::Comment { position } => Some(Post::Thread(position.clone())),
             Input::Reply { thread } => Some(Post::Reply(thread.clone())),
-            Input::EditDraft { .. } => None,
+            Input::EditDraft { .. } | Input::EditNote { .. } => None,
         }
     }
 
@@ -271,14 +298,16 @@ fn place_of_thread(review: &Review, id: &ThreadId) -> Place {
     }
 }
 
-/// Which unsent text belongs to which target: a line (or range), a thread, a draft.
-fn target_key(input: &Input) -> String {
+/// Which unsent text belongs to which target: a line (or range), a thread, a draft, a published note.
+pub(super) fn target_key(input: &Input) -> String {
     match input {
         Input::Comment { position } => {
             format!("line {}:{:?}:{:?}:{:?}", position.new_path, position.line, position.start, position.old_path)
         }
         Input::Reply { thread } => format!("reply {thread}"),
         Input::EditDraft { draft } => format!("draft {draft:?}"),
+        // With its last change: text left unsent never comes back over a version of the note it was not written on.
+        Input::EditNote { thread, note } => format!("note {thread} {} {}", note.id, note.updated_at),
     }
 }
 
