@@ -67,6 +67,7 @@ pub(crate) async fn run(ctx: Ctx, start: Option<crate::forge::MrKey>) -> Result<
         ready_command: ctx.config.queue.ready.command.clone(),
         open: ctx.config.open.clone(),
         agent: agent(&ctx.config.agent, ctx.config.tui.widths().compact, checkout.as_ref()),
+        notifier: notifier(),
         checkout,
         jev: jev(&ctx.config.ai),
         host_origin: ctx.host_origin,
@@ -373,6 +374,13 @@ fn jev(ai: &crate::config::Ai) -> Option<TypeSafe> {
     let found = ai::key(ai::Provider::Typesafe, &ai::KeyEnv::from_process(), &keychain);
     let (key, _) = found.inspect_err(|e| tracing::warn!("reading the Jev key failed: {e:#}")).ok().flatten()?;
     TypeSafe::connect(&key).inspect_err(|e| tracing::warn!("Jev is off: {e}")).ok()
+}
+
+/// What shows a notification on this machine: `terminal-notifier` when revu's `PATH` has it, and where
+/// revu runs, so a click comes back to it.
+fn notifier() -> crate::notify::Notifier {
+    use crate::agent::Run as _;
+    crate::notify::Notifier::detect(|name| std::env::var(name).ok(), |program| crate::agent::Programs.locate(program))
 }
 
 /// The agent of `[agent]`, when it is switched on, with what this machine says: the home folder, Claude
