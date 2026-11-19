@@ -503,6 +503,18 @@ mod tests {
     }
 
     #[test]
+    fn the_tmux_socket_is_what_tmux_writes_before_the_first_comma() {
+        let socket = |value: &str| {
+            let value = value.to_owned();
+            tmux_socket(move |name| (name == "TMUX").then(|| value.clone()))
+        };
+        assert_eq!(socket("/private/tmp/tmux-501/default,1234,2").as_deref(), Some("/private/tmp/tmux-501/default"));
+        assert_eq!(socket(""), None, "an empty TMUX is no tmux");
+        assert_eq!(socket(",1234,2"), None, "a server with no socket is no tmux");
+        assert_eq!(tmux_socket(|_| None), None, "no TMUX is no tmux");
+    }
+
+    #[test]
     fn the_checkout_revu_was_started_in_wins_over_the_config_and_the_agent_follows_start() {
         let config = config::Agent {
             enabled: true,

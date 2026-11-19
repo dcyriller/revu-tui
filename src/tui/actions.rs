@@ -290,15 +290,8 @@ pub(super) fn failed(what: Failure, err: &anyhow::Error) -> Incoming {
 }
 
 async fn notify(notifier: &crate::notify::Notifier, title: &str, body: &str) -> Result<()> {
-    let words = notifier.words(title, body);
-    let (program, arguments) = words.split_first().context("no notifier")?;
-    let status = tokio::process::Command::new(program)
-        .args(arguments)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .await
-        .with_context(|| format!("running {program}"))?;
-    anyhow::ensure!(status.success(), "{program} failed");
+    let output = notifier.command(title, body).stdin(std::process::Stdio::null()).output().await.context("running the notifier")?;
+    anyhow::ensure!(output.status.success(), "the notifier failed: {}", String::from_utf8_lossy(&output.stderr).trim());
     Ok(())
 }
 

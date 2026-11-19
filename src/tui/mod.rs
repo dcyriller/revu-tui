@@ -376,8 +376,6 @@ fn jev(ai: &crate::config::Ai) -> Option<TypeSafe> {
     TypeSafe::connect(&key).inspect_err(|e| tracing::warn!("Jev is off: {e}")).ok()
 }
 
-/// What shows a notification on this machine: `terminal-notifier` when revu's `PATH` has it, and where
-/// revu runs, so a click comes back to it.
 fn notifier() -> crate::notify::Notifier {
     use crate::agent::Run as _;
     crate::notify::Notifier::detect(|name| std::env::var(name).ok(), |program| crate::agent::Programs.locate(program))
