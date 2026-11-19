@@ -393,7 +393,7 @@ fn agent(config: &crate::config::Agent, compact_width: u16, checkout: Option<&cr
     let machine = crate::agent::Machine {
         claude_home: std::env::var_os("CLAUDE_CONFIG_DIR").map_or_else(|| home.join(".claude"), std::path::PathBuf::from),
         home,
-        tmux: std::env::var_os("TMUX").is_some_and(|socket| !socket.is_empty()),
+        tmux: crate::agent::tmux_socket(|name| std::env::var(name).ok()).is_some(),
         terminal: crate::agent::Terminal::detect(|name| std::env::var(name).ok()),
         compact_width,
         started_in: checkout.map(|checkout| (checkout.project.to_string(), checkout.root.clone())),

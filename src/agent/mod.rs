@@ -269,6 +269,11 @@ enum Harness {
     Custom { start: String, open: Option<String> },
 }
 
+/// The socket of the tmux server revu runs in: `TMUX` holds it before its first comma.
+pub(crate) fn tmux_socket(env: impl Fn(&str) -> Option<String>) -> Option<String> {
+    env("TMUX")?.split(',').next().filter(|socket| !socket.is_empty()).map(str::to_owned)
+}
+
 /// What revu learns from the machine at start.
 pub(crate) struct Machine {
     pub(crate) home: PathBuf,

@@ -1,6 +1,6 @@
 //! The macOS notification for an MR that lands in To review, and the way back to revu when it is
-//! clicked. `terminal-notifier` runs a line on the click that selects revu's tmux window and pane and
-//! brings its terminal in front; without it, `osascript` shows a notification nothing happens on.
+//! clicked. `terminal-notifier` runs a line on the click that switches tmux to revu's session, window and
+//! pane and brings its terminal in front; without it, `osascript` shows a notification nothing happens on.
 //! Every value goes to a program as an argument, never into a script, so an MR title cannot run
 //! AppleScript or shell.
 
@@ -8,6 +8,8 @@
 const OSASCRIPT: [&str; 7] =
     ["osascript", "-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run"];
 const TERMINAL_NOTIFIER: &str = "terminal-notifier";
+/// The group of every notification revu shows, so a new one replaces the last instead of stacking.
+const GROUP: &str = "revu";
 /// The app that started the shell revu runs in; macOS sets it for every program an app starts.
 const BUNDLE_ID: &str = "__CFBundleIdentifier";
 
@@ -18,7 +20,7 @@ pub(crate) struct Notifier {
     program: Option<String>,
     /// The bundle id of the terminal revu runs in, which a click brings in front.
     terminal: Option<String>,
-    /// The line a click runs: `tmux` selecting revu's window and pane, when revu runs in tmux.
+    /// The line a click runs: `tmux` switching to revu's pane, when revu runs in tmux.
     back: Option<String>,
 }
 
@@ -33,7 +35,7 @@ impl Notifier {
         let Some(program) = &self.program else {
             return OSASCRIPT.iter().map(|word| (*word).to_owned()).chain([title.to_owned(), body.to_owned()]).collect();
         };
-        let mut words = vec![program.clone(), "-title".to_owned(), title.to_owned(), "-message".to_owned(), body.to_owned()];
+        let mut words = [program.as_str(), "-title", title, "-message", body, "-group", GROUP].map(str::to_owned).to_vec();
         if let Some(terminal) = &self.terminal {
             words.extend(["-activate".to_owned(), terminal.clone()]);
         }
@@ -44,14 +46,14 @@ impl Notifier {
     }
 }
 
-/// `tmux -S /private/tmp/tmux-501/default select-window -t '%5' ';' select-pane -t '%5'`: the server comes
-/// from `TMUX`, and tmux is a full path because the click runs with the notifier's own `PATH`, which
-/// does not know Homebrew.
+/// `tmux -S /private/tmp/tmux-501/default switch-client -t '%5'`: a pane as the target switches the client
+/// to its session, window and pane, so the click works from any session. The server comes from `TMUX`,
+/// and tmux is a full path because the click runs with the notifier's own `PATH`, which does not know Homebrew.
 fn tmux_back(env: &impl Fn(&str) -> Option<String>, locate: &impl Fn(&str) -> Option<String>) -> Option<String> {
     let pane = env("TMUX_PANE").filter(|pane| !pane.is_empty())?;
-    let socket = env("TMUX")?.split(',').next().filter(|socket| !socket.is_empty())?.to_owned();
+    let socket = crate::agent::tmux_socket(env)?;
     let tmux = locate("tmux").unwrap_or_else(|| "tmux".to_owned());
-    let words = [tmux.as_str(), "-S", &socket, "select-window", "-t", &pane, ";", "select-pane", "-t", &pane];
+    let words = [tmux.as_str(), "-S", &socket, "switch-client", "-t", &pane];
     Some(shell_words::join(words))
 }
 
@@ -72,17 +74,19 @@ mod tests {
     }
 
     #[test]
-    fn in_tmux_the_click_selects_revus_window_and_pane_and_brings_the_terminal_in_front() {
+    fn in_tmux_the_click_switches_to_revus_pane_and_brings_the_terminal_in_front() {
         let machine =
             [("__CFBundleIdentifier", "com.mitchellh.ghostty"), ("TMUX", "/private/tmp/tmux-501/default,1234,2"), ("TMUX_PANE", "%5")];
         let words = Notifier::detect(env(&machine), under("/opt/homebrew/bin")).words(TITLE, BODY);
-        let back = "/opt/homebrew/bin/tmux -S /private/tmp/tmux-501/default select-window -t '%5' ';' select-pane -t '%5'";
+        let back = "/opt/homebrew/bin/tmux -S /private/tmp/tmux-501/default switch-client -t '%5'";
         let wanted = [
             "/opt/homebrew/bin/terminal-notifier",
             "-title",
             TITLE,
             "-message",
             BODY,
+            "-group",
+            "revu",
             "-activate",
             "com.mitchellh.ghostty",
             "-execute",
@@ -95,9 +99,21 @@ mod tests {
     fn outside_tmux_the_click_only_brings_the_terminal_in_front() {
         let words =
             Notifier::detect(env(&[("__CFBundleIdentifier", "com.googlecode.iterm2")]), under("/opt/homebrew/bin")).words(TITLE, BODY);
-        assert_eq!(words, ["/opt/homebrew/bin/terminal-notifier", "-title", TITLE, "-message", BODY, "-activate", "com.googlecode.iterm2"]);
+        let wanted = [
+            "/opt/homebrew/bin/terminal-notifier",
+            "-title",
+            TITLE,
+            "-message",
+            BODY,
+            "-group",
+            "revu",
+            "-activate",
+            "com.googlecode.iterm2",
+        ];
+        assert_eq!(words, wanted);
         let words = Notifier::detect(env(&[("TMUX_PANE", "%5")]), under("/opt/homebrew/bin")).words(TITLE, BODY);
-        assert_eq!(words, ["/opt/homebrew/bin/terminal-notifier", "-title", TITLE, "-message", BODY], "a pane with no server is no tmux");
+        let wanted = ["/opt/homebrew/bin/terminal-notifier", "-title", TITLE, "-message", BODY, "-group", "revu"];
+        assert_eq!(words, wanted, "a pane with no server is no tmux");
     }
 
     #[test]
@@ -105,7 +121,7 @@ mod tests {
         let machine = [("TMUX", "/tmp/tmux-501/default,1,0"), ("TMUX_PANE", "%82")];
         let locate = |program: &str| (program == TERMINAL_NOTIFIER).then(|| "/usr/local/bin/terminal-notifier".to_owned());
         let words = Notifier::detect(env(&machine), locate).words(TITLE, BODY);
-        assert_eq!(words[6], "tmux -S /tmp/tmux-501/default select-window -t '%82' ';' select-pane -t '%82'");
+        assert_eq!(words.last().unwrap(), "tmux -S /tmp/tmux-501/default switch-client -t '%82'");
     }
 
     #[test]
